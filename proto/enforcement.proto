@@ -1,0 +1,35 @@
+syntax = "proto3";
+package nac.enforcement;
+
+service EnforcementService {
+  rpc BlockDevice (BlockRequest) returns (BlockResponse);
+  rpc QuarantineDevice (QuarantineRequest) returns (QuarantineResponse);
+  rpc AllowDevice (AllowRequest) returns (AllowResponse);
+}
+
+message BlockRequest {
+  string mac_address = 1;
+  string reason = 2;
+}
+
+message BlockResponse {
+  bool success = 1;
+}
+
+message QuarantineRequest {
+  string mac_address = 1;
+  uint32 vlan_id = 2;
+}
+
+message QuarantineResponse {
+  bool success = 1;
+}
+
+message AllowRequest {
+  string mac_address = 1;
+  uint32 vlan_id = 2;
+}
+
+message AllowResponse {
+  bool success = 1;
+}

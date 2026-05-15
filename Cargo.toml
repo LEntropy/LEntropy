@@ -1,0 +1,44 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/nac-proto",
+    "crates/nac-netproto",
+    "crates/nac-fingerprint",
+    "crates/nac-policy-engine",
+    "crates/nac-models",
+    "crates/nac-auth",
+    "crates/nac-store",
+    "crates/nac-bus",
+    "crates/nac-crypto",
+    "crates/nac-config",
+    "services/policy-manager",
+    "services/sensor",
+    "services/enforcement",
+    "services/aaa",
+    "services/dhcp",
+    "services/agent-gateway",
+    "services/api-gateway",
+]
+
+[workspace.dependencies]
+tokio          = { version = "1",    features = ["full"] }
+axum           = "0.8"
+tonic          = "0.12"
+prost          = "0.13"
+serde          = { version = "1", features = ["derive"] }
+serde_json     = "1"
+sqlx           = { version = "0.8", features = ["postgres", "runtime-tokio", "tls-rustls"] }
+pnet           = "0.35"
+rustls         = "0.23"
+tokio-rustls   = "0.26"
+async-nats     = "0.38"
+ldap3          = "0.11"
+dhcproto       = "0.12"
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+anyhow    = "1"
+thiserror = "2"
+config    = "0.14"
+
+[profile.release]
+opt-level = 3

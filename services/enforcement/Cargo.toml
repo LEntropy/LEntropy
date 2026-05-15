@@ -1,0 +1,16 @@
+[package]
+name = "enforcement"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio              = { workspace = true }
+pnet               = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow             = { workspace = true }
+thiserror          = { workspace = true }
+nac-netproto       = { path = "../../crates/nac-netproto" }
+nac-models         = { path = "../../crates/nac-models" }
+nac-bus            = { path = "../../crates/nac-bus" }
+nac-config         = { path = "../../crates/nac-config" }

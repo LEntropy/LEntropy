@@ -1,0 +1,20 @@
+[package]
+name = "aaa"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio              = { workspace = true }
+axum               = { workspace = true }
+rustls             = { workspace = true }
+tokio-rustls       = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow             = { workspace = true }
+thiserror          = { workspace = true }
+serde              = { workspace = true }
+nac-auth           = { path = "../../crates/nac-auth" }
+nac-crypto         = { path = "../../crates/nac-crypto" }
+nac-models         = { path = "../../crates/nac-models" }
+nac-bus            = { path = "../../crates/nac-bus" }
+nac-config         = { path = "../../crates/nac-config" }

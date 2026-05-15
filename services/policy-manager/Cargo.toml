@@ -1,0 +1,24 @@
+[package]
+name = "policy-manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio              = { workspace = true }
+axum               = { workspace = true }
+tonic              = { workspace = true }
+serde              = { workspace = true }
+serde_json         = { workspace = true }
+sqlx               = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow             = { workspace = true }
+thiserror          = { workspace = true }
+nac-models         = { path = "../../crates/nac-models" }
+nac-store          = { path = "../../crates/nac-store" }
+nac-policy-engine  = { path = "../../crates/nac-policy-engine" }
+nac-config         = { path = "../../crates/nac-config" }
+nac-bus            = { path = "../../crates/nac-bus" }
+
+[build-dependencies]
+tonic-build = "0.12"

@@ -1,0 +1,14 @@
+[package]
+name = "dhcp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio              = { workspace = true }
+dhcproto           = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow             = { workspace = true }
+nac-models         = { path = "../../crates/nac-models" }
+nac-bus            = { path = "../../crates/nac-bus" }
+nac-config         = { path = "../../crates/nac-config" }

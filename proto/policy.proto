@@ -1,0 +1,37 @@
+syntax = "proto3";
+package nac.policy;
+
+service PolicyService {
+  rpc GetPolicy (GetPolicyRequest) returns (PolicyResponse);
+  rpc ListPolicies (ListPoliciesRequest) returns (ListPoliciesResponse);
+  rpc EvaluateDevice (EvaluateRequest) returns (EvaluateResponse);
+}
+
+message GetPolicyRequest {
+  string id = 1;
+}
+
+message ListPoliciesRequest {}
+
+message ListPoliciesResponse {
+  repeated PolicyResponse policies = 1;
+}
+
+message PolicyResponse {
+  string id = 1;
+  string name = 2;
+  int32 priority = 3;
+  string action = 4;
+}
+
+message EvaluateRequest {
+  string mac_address = 1;
+  string ip_address = 2;
+  string username = 3;
+}
+
+message EvaluateResponse {
+  string action = 1;
+  uint32 vlan_id = 2;
+  string reason = 3;
+}

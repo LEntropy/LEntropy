@@ -1,0 +1,18 @@
+[package]
+name = "agent-gateway"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio              = { workspace = true }
+tonic              = { workspace = true }
+rustls             = { workspace = true }
+tokio-rustls       = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow             = { workspace = true }
+nac-proto          = { path = "../../crates/nac-proto" }
+nac-crypto         = { path = "../../crates/nac-crypto" }
+nac-models         = { path = "../../crates/nac-models" }
+nac-bus            = { path = "../../crates/nac-bus" }
+nac-config         = { path = "../../crates/nac-config" }

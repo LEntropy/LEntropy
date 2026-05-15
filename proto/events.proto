@@ -1,0 +1,31 @@
+syntax = "proto3";
+package nac.events;
+
+message DeviceDetected {
+  string mac_address = 1;
+  string ip_address = 2;
+  string interface = 3;
+  int64 timestamp = 4;
+}
+
+message DeviceAuthenticated {
+  string mac_address = 1;
+  string username = 2;
+  string method = 3;
+  int64 timestamp = 4;
+}
+
+message PolicyDecision {
+  string mac_address = 1;
+  string action = 2;
+  uint32 vlan_id = 3;
+  string reason = 4;
+  int64 timestamp = 5;
+}
+
+message IntegrityViolation {
+  string device_id = 1;
+  string violation_type = 2;
+  string detail = 3;
+  int64 timestamp = 4;
+}

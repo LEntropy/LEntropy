@@ -1,0 +1,15 @@
+/target
+**/*.rs.bk
+# Cargo.lock is committed for binary workspaces
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+.DS_Store
+node_modules/
+web/*/dist/
+web/*/node_modules/
+deployments/docker/secrets/

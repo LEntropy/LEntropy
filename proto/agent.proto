@@ -1,0 +1,54 @@
+syntax = "proto3";
+package nac.agent;
+
+service AgentService {
+  rpc Register (RegisterRequest) returns (RegisterResponse);
+  rpc ReportStatus (StatusReport) returns (StatusAck);
+  rpc GetPolicy (AgentPolicyRequest) returns (AgentPolicyResponse);
+}
+
+message RegisterRequest {
+  string device_id = 1;
+  string os = 2;
+  string version = 3;
+}
+
+message RegisterResponse {
+  string token = 1;
+}
+
+message StatusReport {
+  string device_id = 1;
+  repeated SoftwareItem installed_software = 2;
+  repeated PatchItem missing_patches = 3;
+  bool usb_enabled = 4;
+  bool bluetooth_enabled = 5;
+  bool folder_sharing_enabled = 6;
+}
+
+message SoftwareItem {
+  string name = 1;
+  string version = 2;
+}
+
+message PatchItem {
+  string kb_id = 1;
+  string description = 2;
+}
+
+message StatusAck {
+  string action = 1;
+}
+
+message AgentPolicyRequest {
+  string device_id = 1;
+}
+
+message AgentPolicyResponse {
+  repeated string required_software = 1;
+  repeated string forbidden_software = 2;
+  bool require_patches = 3;
+  bool allow_usb = 4;
+  bool allow_bluetooth = 5;
+  bool allow_folder_sharing = 6;
+}

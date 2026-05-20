@@ -13,8 +13,14 @@ tracing-subscriber = { workspace = true }
 anyhow             = { workspace = true }
 thiserror          = { workspace = true }
 serde              = { workspace = true }
+serde_json         = { workspace = true }
+async-nats         = { workspace = true }
+uuid               = { workspace = true }
+sqlx               = { workspace = true }
+futures-util       = "0.3"
 nac-auth           = { path = "../../crates/nac-auth" }
 nac-crypto         = { path = "../../crates/nac-crypto" }
 nac-models         = { path = "../../crates/nac-models" }
 nac-bus            = { path = "../../crates/nac-bus" }
 nac-config         = { path = "../../crates/nac-config" }
+nac-store          = { path = "../../crates/nac-store" }

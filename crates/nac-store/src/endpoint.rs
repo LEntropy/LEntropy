@@ -154,6 +154,16 @@ impl<'a> EndpointRepo<'a> {
         Ok(())
     }
 
+    /// username 업데이트
+    pub async fn set_username(&self, id: Uuid, username: &str) -> Result<()> {
+        sqlx::query("UPDATE endpoints SET username = $1 WHERE id = $2")
+            .bind(username)
+            .bind(id)
+            .execute(self.pool)
+            .await?;
+        Ok(())
+    }
+
     /// 전체 단말 수
     pub async fn count(&self) -> Result<i64> {
         let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*)::bigint FROM endpoints")

@@ -7,6 +7,19 @@ pub struct AppConfig {
     pub redis_url: String,
     pub nats_url: String,
     pub listen_addr: String,
+
+    // LDAP (Phase 3)
+    pub ldap_url: Option<String>,
+    pub ldap_bind_dn: Option<String>,
+    pub ldap_bind_pw: Option<String>,
+    pub ldap_user_base: Option<String>,
+    pub ldap_user_filter: Option<String>,
+
+    // JWT
+    pub jwt_secret: Option<String>,
+
+    // Captive Portal
+    pub captive_portal_addr: Option<String>,
 }
 
 impl AppConfig {

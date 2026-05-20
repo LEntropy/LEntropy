@@ -8,8 +8,14 @@ pub struct EndpointDetectedEvent {
     pub mac_address: String,
     pub ip_address: String,
     pub interface: String,
-    pub source: String, // "arp", "dhcp", "ndp"
+    pub source: String, // "arp", "dhcp"
     pub timestamp: i64,
+    // 핑거프린팅 결과 (DHCP 경로에서 채워짐)
+    pub hostname: Option<String>,
+    pub os_family: Option<String>,
+    pub os_version: Option<String>,
+    pub device_type: Option<String>,
+    pub vendor: Option<String>,
 }
 
 pub struct NatsPublisher {

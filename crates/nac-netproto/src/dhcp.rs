@@ -129,3 +129,60 @@ pub fn parse_dhcp_client(payload: &[u8]) -> Result<DhcpClientPacket, NetProtoErr
         vendor_class,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_dhcp_discover(mac: [u8; 6], prl: &[u8], hostname: &str) -> Vec<u8> {
+        let mut pkt = vec![0u8; 240];
+        pkt[0] = 1; // op=BOOTREQUEST
+        pkt[1] = 1; // htype=Ethernet
+        pkt[2] = 6; // hlen
+        pkt[28..34].copy_from_slice(&mac);
+        // magic cookie
+        pkt[236] = 99;
+        pkt[237] = 130;
+        pkt[238] = 83;
+        pkt[239] = 99;
+        // Option 53: DHCP Discover
+        pkt.extend_from_slice(&[53, 1, 1]);
+        // Option 55: PRL
+        pkt.push(55);
+        pkt.push(prl.len() as u8);
+        pkt.extend_from_slice(prl);
+        // Option 12: hostname
+        let h = hostname.as_bytes();
+        pkt.push(12);
+        pkt.push(h.len() as u8);
+        pkt.extend_from_slice(h);
+        // Option 255: END
+        pkt.push(255);
+        pkt
+    }
+
+    #[test]
+    fn test_parse_dhcp_discover() {
+        let mac = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
+        let prl = &[1u8, 3, 6, 15];
+        let pkt = make_dhcp_discover(mac, prl, "myhost");
+        let result = parse_dhcp_client(&pkt).unwrap();
+        assert_eq!(result.client_mac, mac);
+        assert_eq!(result.msg_type, 1); // DISCOVER
+        assert_eq!(result.parameter_request_list.as_deref(), Some(prl as &[u8]));
+        assert_eq!(result.hostname.as_deref(), Some("myhost"));
+    }
+
+    #[test]
+    fn test_parse_dhcp_too_short() {
+        let short = vec![0u8; 100];
+        assert!(parse_dhcp_client(&short).is_err());
+    }
+
+    #[test]
+    fn test_parse_dhcp_not_request() {
+        let mut pkt = vec![0u8; 240];
+        pkt[0] = 2; // op=BOOTREPLY
+        assert!(parse_dhcp_client(&pkt).is_err());
+    }
+}

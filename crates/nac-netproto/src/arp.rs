@@ -92,3 +92,49 @@ pub fn parse_arp(frame: &[u8]) -> Result<ArpEntry, NetProtoError> {
         is_reply: oper == 2,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_craft_gratuitous_arp_length() {
+        let mac = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
+        let ip = "192.168.1.1".parse().unwrap();
+        let frame = craft_gratuitous_arp(mac, ip, ip).unwrap();
+        assert_eq!(frame.len(), 42);
+        // Ethernet dst = broadcast
+        assert_eq!(&frame[0..6], &[0xff; 6]);
+        // ethertype ARP
+        assert_eq!(&frame[12..14], &[0x08, 0x06]);
+        // ARP OPER = reply (2)
+        assert_eq!(&frame[20..22], &[0x00, 0x02]);
+    }
+
+    #[test]
+    fn test_craft_arp_reply_unicast() {
+        let dst = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
+        let sender = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
+        let sender_ip = "192.168.1.1".parse().unwrap();
+        let target = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
+        let target_ip = "192.168.1.100".parse().unwrap();
+        let frame = craft_arp_reply(dst, sender, sender_ip, target, target_ip).unwrap();
+        assert_eq!(frame.len(), 42);
+        // dst = victim MAC
+        assert_eq!(&frame[0..6], &dst);
+        // src = sender MAC
+        assert_eq!(&frame[6..12], &sender);
+    }
+
+    #[test]
+    fn test_parse_arp_reply() {
+        let sender_mac = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
+        let sender_ip = "10.0.0.1".parse().unwrap();
+        let target_ip = "10.0.0.2".parse().unwrap();
+        let frame = craft_gratuitous_arp(sender_mac, sender_ip, target_ip).unwrap();
+        let entry = parse_arp(&frame).unwrap();
+        assert_eq!(entry.sender_mac, sender_mac);
+        assert_eq!(entry.sender_ip, sender_ip);
+        assert!(entry.is_reply);
+    }
+}

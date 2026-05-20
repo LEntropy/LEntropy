@@ -82,6 +82,94 @@ impl CompliancePolicy {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_clean_report() -> PostureReport {
+        PostureReport {
+            device_id: "AA:BB:CC:DD:EE:FF".to_string(),
+            os: "Windows".to_string(),
+            os_version: "11".to_string(),
+            installed_software: vec![SoftwareItem {
+                name: "Antivirus Pro".to_string(),
+                version: "1.0".to_string(),
+            }],
+            missing_patches: vec![],
+            usb_enabled: false,
+            bluetooth_enabled: true,
+            folder_sharing_enabled: false,
+            timestamp: 0,
+        }
+    }
+
+    #[test]
+    fn test_compliant_when_no_patches_missing() {
+        let policy = CompliancePolicy {
+            require_patches: true,
+            allow_usb: true,
+            allow_bluetooth: true,
+            allow_folder_sharing: true,
+            required_software: vec![],
+        };
+        let report = make_clean_report();
+        assert!(policy.evaluate(&report));
+    }
+
+    #[test]
+    fn test_non_compliant_missing_patch() {
+        let policy = CompliancePolicy {
+            require_patches: true,
+            ..CompliancePolicy::default_policy()
+        };
+        let mut report = make_clean_report();
+        report.missing_patches.push(PatchItem {
+            kb_id: "KB1234".to_string(),
+            description: "Critical patch".to_string(),
+        });
+        assert!(!policy.evaluate(&report));
+    }
+
+    #[test]
+    fn test_non_compliant_usb_enabled() {
+        let policy = CompliancePolicy {
+            allow_usb: false,
+            ..CompliancePolicy::default_policy()
+        };
+        let mut report = make_clean_report();
+        report.usb_enabled = true;
+        assert!(!policy.evaluate(&report));
+    }
+
+    #[test]
+    fn test_non_compliant_missing_required_software() {
+        let policy = CompliancePolicy {
+            required_software: vec!["Antivirus".to_string()],
+            ..CompliancePolicy::default_policy()
+        };
+        let mut report = make_clean_report();
+        report.installed_software.clear(); // no software
+        assert!(!policy.evaluate(&report));
+    }
+
+    #[test]
+    fn test_compliant_required_software_present() {
+        let policy = CompliancePolicy {
+            required_software: vec!["Antivirus".to_string()],
+            ..CompliancePolicy::default_policy()
+        };
+        let report = make_clean_report(); // has "Antivirus Pro"
+        assert!(policy.evaluate(&report)); // partial match via contains
+    }
+
+    #[test]
+    fn test_default_policy_clean_device() {
+        let policy = CompliancePolicy::default_policy();
+        let report = make_clean_report();
+        assert!(policy.evaluate(&report));
+    }
+}
+
 pub struct PostureRepo<'a> {
     pool: &'a PgPool,
 }

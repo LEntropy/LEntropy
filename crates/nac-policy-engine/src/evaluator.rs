@@ -101,4 +101,98 @@ mod tests {
         let decision = evaluate(&mut rules, &ctx).unwrap();
         matches!(decision, PolicyDecision::Quarantine { .. });
     }
+
+    #[test]
+    fn test_mac_list_match() {
+        use crate::rule::Condition;
+        let mut rules = vec![PolicyRule {
+            name: "mac-bypass".into(),
+            priority: 1,
+            condition: Condition::MacList {
+                macs: vec!["AA:BB:CC:DD:EE:FF".into()],
+            },
+            decision: PolicyDecision::Allow,
+        }];
+        let ctx = PolicyContext {
+            mac_address: "AA:BB:CC:DD:EE:FF".into(),
+            ..Default::default()
+        };
+        let decision = evaluate(&mut rules, &ctx).unwrap();
+        assert_eq!(decision, PolicyDecision::Allow);
+    }
+
+    #[test]
+    fn test_mac_list_no_match() {
+        use crate::rule::Condition;
+        let mut rules = vec![PolicyRule {
+            name: "mac-bypass".into(),
+            priority: 1,
+            condition: Condition::MacList {
+                macs: vec!["AA:BB:CC:DD:EE:FF".into()],
+            },
+            decision: PolicyDecision::Allow,
+        }];
+        let ctx = PolicyContext {
+            mac_address: "11:22:33:44:55:66".into(),
+            ..Default::default()
+        };
+        let decision = evaluate(&mut rules, &ctx).unwrap();
+        matches!(decision, PolicyDecision::Deny { .. });
+    }
+
+    #[test]
+    fn test_compliant_condition() {
+        use crate::rule::Condition;
+        let mut rules = vec![PolicyRule {
+            name: "require-compliance".into(),
+            priority: 10,
+            condition: Condition::Compliant { required: true },
+            decision: PolicyDecision::Allow,
+        }];
+        // Compliant device → allowed
+        let ctx = PolicyContext {
+            mac_address: "AA:BB:CC:DD:EE:FF".into(),
+            is_compliant: Some(true),
+            ..Default::default()
+        };
+        let decision = evaluate(&mut rules, &ctx).unwrap();
+        assert_eq!(decision, PolicyDecision::Allow);
+
+        // Non-compliant → deny (no matching rule)
+        let ctx2 = PolicyContext {
+            mac_address: "AA:BB:CC:DD:EE:FF".into(),
+            is_compliant: Some(false),
+            ..Default::default()
+        };
+        let decision2 = evaluate(&mut rules, &ctx2).unwrap();
+        matches!(decision2, PolicyDecision::Deny { .. });
+    }
+
+    #[test]
+    fn test_priority_ordering() {
+        use crate::rule::Condition;
+        // Lower priority number wins
+        let mut rules = vec![
+            PolicyRule {
+                name: "low-priority-deny".into(),
+                priority: 100,
+                condition: Condition::And { conditions: vec![] }, // always match
+                decision: PolicyDecision::Deny {
+                    reason: "low".into(),
+                },
+            },
+            PolicyRule {
+                name: "high-priority-allow".into(),
+                priority: 1,
+                condition: Condition::And { conditions: vec![] }, // always match
+                decision: PolicyDecision::Allow,
+            },
+        ];
+        let ctx = PolicyContext {
+            mac_address: "AA:BB:CC:DD:EE:FF".into(),
+            ..Default::default()
+        };
+        let decision = evaluate(&mut rules, &ctx).unwrap();
+        assert_eq!(decision, PolicyDecision::Allow); // priority 1 wins
+    }
 }

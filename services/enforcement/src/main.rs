@@ -6,6 +6,9 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 mod arp_spoof;
 mod consumer;
+mod gateway_lock;
+mod ipv6_block;
+mod snmp_port;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

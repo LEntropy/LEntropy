@@ -34,6 +34,9 @@ pub fn matches_condition(condition: &Condition, ctx: &PolicyContext) -> bool {
         Condition::And { conditions } => conditions.iter().all(|c| matches_condition(c, ctx)),
         Condition::Or { conditions } => conditions.iter().any(|c| matches_condition(c, ctx)),
         Condition::Not { condition } => !matches_condition(condition, ctx),
+        Condition::MacList { macs } => macs
+            .iter()
+            .any(|m| m.to_uppercase() == ctx.mac_address.to_uppercase()),
     }
 }
 

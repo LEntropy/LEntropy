@@ -21,6 +21,8 @@ pub enum Condition {
     Or { conditions: Vec<Condition> },
     /// Logical NOT of a condition.
     Not { condition: Box<Condition> },
+    /// MAC 주소 allowlist — 등록 단말 자동 허용(MAC bypass)에 사용
+    MacList { macs: Vec<String> },
 }
 
 /// A named policy rule with priority, conditions, and a resulting decision.

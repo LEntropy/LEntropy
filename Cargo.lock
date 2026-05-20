@@ -711,11 +711,15 @@ name = "enforcement"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-nats",
+ "futures-util",
  "nac-bus",
  "nac-config",
  "nac-models",
  "nac-netproto",
  "pnet",
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

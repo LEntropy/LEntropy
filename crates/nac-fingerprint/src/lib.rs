@@ -3,6 +3,8 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+pub mod oui;
+
 /// Confidence level of an identification result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Confidence {
@@ -48,20 +50,32 @@ pub fn identify(signals: &FingerprintSignals) -> Result<Fingerprint> {
         confidence: Confidence::Low,
     };
 
-    // OUI-based vendor detection
-    if let Some(ref oui) = signals.oui {
-        match oui.to_uppercase().as_str() {
-            "ACDE48" | "A4C361" => {
-                fp.vendor = Some("Apple".into());
-                fp.os_family = Some("iOS/macOS".into());
-                fp.confidence = Confidence::Medium;
+    // OUI-based vendor detection — use the embedded OUI lookup table first
+    if let Some(ref oui_str) = signals.oui {
+        if let Some(vendor) = oui::lookup(oui_str) {
+            fp.vendor = Some(vendor.to_string());
+            fp.confidence = Confidence::Medium;
+
+            // Infer OS family and device type from well-known vendors
+            match vendor {
+                "Apple" => {
+                    fp.os_family = fp.os_family.or_else(|| Some("iOS/macOS".into()));
+                }
+                "Cisco" => {
+                    fp.device_type = fp.device_type.or_else(|| Some("Network Equipment".into()));
+                }
+                "Netgear" | "TP-Link" | "D-Link" | "ASUS" | "Ubiquiti" => {
+                    fp.device_type = fp.device_type.or_else(|| Some("Network Equipment".into()));
+                }
+                "VMware" => {
+                    fp.device_type = fp.device_type.or_else(|| Some("Virtual Machine".into()));
+                }
+                "Raspberry Pi" => {
+                    fp.device_type = fp.device_type.or_else(|| Some("IoT".into()));
+                    fp.os_family = fp.os_family.or_else(|| Some("Linux".into()));
+                }
+                _ => {}
             }
-            "001A2B" => {
-                fp.vendor = Some("Cisco".into());
-                fp.device_type = Some("Network Equipment".into());
-                fp.confidence = Confidence::Medium;
-            }
-            _ => {}
         }
     }
 

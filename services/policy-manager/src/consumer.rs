@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_nats::Client;
 use futures_util::StreamExt;
 use nac_policy_engine::evaluator;
+use nac_policy_engine::PolicyDecision;
 use nac_store::audit::AuditRepo;
 use nac_store::endpoint::{EndpointRepo, UpsertEndpoint};
 use nac_store::policy::{decision_to_status, PolicyRepo};
@@ -11,6 +12,7 @@ use sqlx::PgPool;
 use tracing::{debug, error, info, warn};
 
 const SUBJECT: &str = "nac.events.endpoint.detected";
+const ENFORCEMENT_SUBJECT: &str = "nac.commands.enforcement";
 
 /// sensor 서비스가 발행하는 이벤트 페이로드
 #[derive(Debug, Deserialize)]
@@ -50,7 +52,7 @@ pub async fn run(nats: Client, pool: PgPool) -> Result<()> {
             "endpoint event received"
         );
 
-        if let Err(e) = process_event(&pool, payload).await {
+        if let Err(e) = process_event(&nats, &pool, payload).await {
             error!(error = %e, "error processing endpoint event");
         }
     }
@@ -59,7 +61,7 @@ pub async fn run(nats: Client, pool: PgPool) -> Result<()> {
     Ok(())
 }
 
-async fn process_event(pool: &PgPool, event: EndpointDetectedEvent) -> Result<()> {
+async fn process_event(nats: &Client, pool: &PgPool, event: EndpointDetectedEvent) -> Result<()> {
     let endpoint_repo = EndpointRepo::new(pool);
     let policy_repo = PolicyRepo::new(pool);
     let audit_repo = AuditRepo::new(pool);
@@ -166,7 +168,61 @@ async fn process_event(pool: &PgPool, event: EndpointDetectedEvent) -> Result<()
                 }),
             )
             .await?;
+
+        // enforcement 명령 발행 (상태 변경 시)
+        publish_enforcement_command(
+            nats,
+            &row.mac_address,
+            &row.ip_address,
+            new_status,
+            &decision,
+        )
+        .await;
     }
 
     Ok(())
+}
+
+/// enforcement 서비스에 ARP 명령 발행
+async fn publish_enforcement_command(
+    nats: &Client,
+    mac: &str,
+    ip: &Option<String>,
+    status: &str,
+    decision: &PolicyDecision,
+) {
+    let action = match status {
+        "quarantined" => "quarantine",
+        "denied" => "block",
+        "allowed" => "allow",
+        _ => return,
+    };
+
+    let vlan_id = match decision {
+        PolicyDecision::Quarantine { vlan, .. } => Some(*vlan),
+        PolicyDecision::AllowVlan(v) => Some(*v),
+        _ => None,
+    };
+
+    let cmd = json!({
+        "mac_address": mac,
+        "ip_address": ip.as_deref().unwrap_or(""),
+        "action": action,
+        "gateway_ip": "", // 게이트웨이 IP는 설정에서 가져와야 함 (향후 확장)
+        "gateway_mac": null,
+        "vlan_id": vlan_id,
+    });
+
+    match serde_json::to_vec(&cmd) {
+        Ok(payload) => {
+            if let Err(e) = nats.publish(ENFORCEMENT_SUBJECT, payload.into()).await {
+                warn!(error = %e, mac = %mac, "failed to publish enforcement command");
+            } else {
+                debug!(mac = %mac, action = %action, "enforcement command published");
+            }
+        }
+        Err(e) => {
+            warn!(error = %e, "failed to serialize enforcement command");
+        }
+    }
 }

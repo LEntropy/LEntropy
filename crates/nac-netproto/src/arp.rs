@@ -40,6 +40,40 @@ pub fn craft_gratuitous_arp(
     Ok(frame)
 }
 
+/// Craft a targeted ARP reply (unicast) for ARP poisoning.
+///
+/// - `dst_mac`: 피해자 MAC (Ethernet 목적지)
+/// - `sender_mac`: 스푸핑할 MAC (enforcement node의 실제 MAC)
+/// - `sender_ip`: 스푸핑할 IP (예: 게이트웨이 IP)
+/// - `target_mac`: 피해자 MAC (ARP THA)
+/// - `target_ip`: 피해자 IP (ARP TPA)
+pub fn craft_arp_reply(
+    dst_mac: [u8; 6],
+    sender_mac: [u8; 6],
+    sender_ip: Ipv4Addr,
+    target_mac: [u8; 6],
+    target_ip: Ipv4Addr,
+) -> Result<Vec<u8>, NetProtoError> {
+    let mut frame = Vec::with_capacity(42);
+    // Ethernet header
+    frame.extend_from_slice(&dst_mac); // dst: victim MAC (unicast)
+    frame.extend_from_slice(&sender_mac); // src: enforcement MAC
+    frame.extend_from_slice(&[0x08, 0x06]); // ethertype ARP
+
+    // ARP payload
+    frame.extend_from_slice(&[0x00, 0x01]); // HTYPE: Ethernet
+    frame.extend_from_slice(&[0x08, 0x00]); // PTYPE: IPv4
+    frame.push(6); // HLEN
+    frame.push(4); // PLEN
+    frame.extend_from_slice(&[0x00, 0x02]); // OPER: reply
+    frame.extend_from_slice(&sender_mac); // SHA: spoofed sender MAC
+    frame.extend_from_slice(&sender_ip.octets()); // SPA: spoofed sender IP
+    frame.extend_from_slice(&target_mac); // THA: victim MAC
+    frame.extend_from_slice(&target_ip.octets()); // TPA: victim IP
+
+    Ok(frame)
+}
+
 /// Parse an ARP entry from a raw Ethernet frame slice.
 pub fn parse_arp(frame: &[u8]) -> Result<ArpEntry, NetProtoError> {
     if frame.len() < 42 {

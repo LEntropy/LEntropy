@@ -6,6 +6,8 @@ use thiserror::Error;
 pub mod jwt;
 pub mod ldap;
 
+pub use ldap::LdapClient;
+
 /// Authentication errors.
 #[derive(Debug, Error)]
 pub enum AuthError {

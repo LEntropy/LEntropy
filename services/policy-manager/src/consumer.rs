@@ -6,6 +6,7 @@ use nac_policy_engine::PolicyDecision;
 use nac_store::audit::AuditRepo;
 use nac_store::endpoint::{EndpointRepo, UpsertEndpoint};
 use nac_store::policy::{decision_to_status, PolicyRepo};
+use nac_store::session::{CreateSession, SessionRepo};
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::PgPool;
@@ -65,6 +66,7 @@ async fn process_event(nats: &Client, pool: &PgPool, event: EndpointDetectedEven
     let endpoint_repo = EndpointRepo::new(pool);
     let policy_repo = PolicyRepo::new(pool);
     let audit_repo = AuditRepo::new(pool);
+    let session_repo = SessionRepo::new(pool);
 
     // ── 1. 단말 업서트 ────────────────────────────────────────────────────
     let ip = if event.ip_address.is_empty() {
@@ -168,6 +170,34 @@ async fn process_event(nats: &Client, pool: &PgPool, event: EndpointDetectedEven
                 }),
             )
             .await?;
+
+        // 격리(quarantine) 상태로 전환 시 새 세션 생성
+        if new_status == "quarantined" {
+            let vlan_id = match &decision {
+                PolicyDecision::Quarantine { vlan, .. } => Some(*vlan as i16),
+                _ => None,
+            };
+            match session_repo
+                .create(&CreateSession {
+                    endpoint_id: row.id,
+                    auth_method: "captive_portal".to_string(),
+                    vlan_id,
+                })
+                .await
+            {
+                Ok(sess) => {
+                    info!(
+                        session_id  = %sess.id,
+                        endpoint_id = %row.id,
+                        mac         = %row.mac_address,
+                        "session created for quarantined endpoint"
+                    );
+                }
+                Err(e) => {
+                    warn!(error = %e, mac = %row.mac_address, "failed to create session");
+                }
+            }
+        }
 
         // enforcement 명령 발행 (상태 변경 시)
         publish_enforcement_command(

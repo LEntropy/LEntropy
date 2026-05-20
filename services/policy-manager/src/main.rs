@@ -5,6 +5,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 mod api;
 mod consumer;
+mod session_handler;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -34,12 +35,21 @@ async fn main() -> anyhow::Result<()> {
     let nats = async_nats::connect(&config.nats_url).await?;
     tracing::info!(nats_url = %config.nats_url, "NATS connected");
 
-    // NATS 소비자 태스크
+    // NATS 소비자 태스크 — 단말 탐지 이벤트
     let consumer_pool = pool.clone();
     let consumer_nats = nats.clone();
     tokio::spawn(async move {
         if let Err(e) = consumer::run(consumer_nats, consumer_pool).await {
             tracing::error!(error = %e, "NATS consumer error");
+        }
+    });
+
+    // NATS 소비자 태스크 — 인증 응답 이벤트
+    let auth_pool = pool.clone();
+    let auth_nats = nats.clone();
+    tokio::spawn(async move {
+        if let Err(e) = session_handler::run(auth_nats, auth_pool).await {
+            tracing::error!(error = %e, "auth response consumer error");
         }
     });
 

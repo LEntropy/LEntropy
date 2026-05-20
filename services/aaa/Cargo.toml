@@ -16,6 +16,7 @@ serde              = { workspace = true }
 serde_json         = { workspace = true }
 async-nats         = { workspace = true }
 uuid               = { workspace = true }
+time               = { workspace = true }
 sqlx               = { workspace = true }
 futures-util       = "0.3"
 nac-auth           = { path = "../../crates/nac-auth" }

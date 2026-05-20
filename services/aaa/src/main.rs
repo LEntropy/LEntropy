@@ -1,7 +1,11 @@
 //! aaa: Authentication, Authorization, and Accounting service.
-//!      Provides RADIUS and Captive Portal endpoints.
+//!      Provides a Captive Portal HTTP endpoint for NAC authentication.
+
+use std::sync::Arc;
 
 use tracing_subscriber::{fmt, EnvFilter};
+
+mod captive_portal;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -14,15 +18,73 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!(service = "aaa", "starting up");
 
-    let _config = nac_config::AppConfig::load()?;
+    let config = nac_config::AppConfig::load()?;
 
-    tracing::info!("configuration loaded — starting RADIUS + Captive Portal");
+    // ── NATS 연결 ─────────────────────────────────────────────────────────
+    let nats = async_nats::connect(&config.nats_url).await?;
+    tracing::info!(nats_url = %config.nats_url, "NATS connected");
 
-    // TODO: bind RADIUS UDP socket (1812/1813),
-    //       start axum captive-portal HTTP server,
-    //       authenticate via nac-auth LDAP client.
+    // ── LDAP 클라이언트 초기화 (설정 없으면 mock 모드) ───────────────────
+    let ldap = match (
+        &config.ldap_url,
+        &config.ldap_bind_dn,
+        &config.ldap_bind_pw,
+        &config.ldap_user_base,
+        &config.ldap_user_filter,
+    ) {
+        (Some(url), Some(bind_dn), Some(bind_pw), Some(user_base), Some(user_filter)) => {
+            tracing::info!(ldap_url = %url, "LDAP client initialized");
+            Some(nac_auth::LdapClient::new(
+                url.clone(),
+                bind_dn.clone(),
+                bind_pw.clone(),
+                user_base.clone(),
+                user_filter.clone(),
+            ))
+        }
+        _ => {
+            tracing::warn!("LDAP not configured — captive portal running in mock-denied mode");
+            None
+        }
+    };
 
-    tokio::signal::ctrl_c().await?;
+    // ── JWT 시크릿 ────────────────────────────────────────────────────────
+    let jwt_secret = config
+        .jwt_secret
+        .as_deref()
+        .unwrap_or("change-me-in-production-min-32-chars")
+        .as_bytes()
+        .to_vec();
+
+    // ── Captive Portal 상태 ───────────────────────────────────────────────
+    let state = Arc::new(captive_portal::PortalState {
+        ldap,
+        nats,
+        jwt_secret,
+        default_mac: None,
+    });
+
+    // ── HTTP 서버 바인딩 ─────────────────────────────────────────────────
+    let addr = config
+        .captive_portal_addr
+        .as_deref()
+        .unwrap_or("0.0.0.0:8080");
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    tracing::info!(addr = %addr, "captive portal listening");
+
+    let app = captive_portal::router(state);
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
     tracing::info!("shutting down");
     Ok(())
+}
+
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to install Ctrl-C handler");
 }

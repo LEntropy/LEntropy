@@ -1,0 +1,31 @@
+{
+  "recommendations": [
+    // Rust
+    "rust-lang.rust-analyzer",
+    "tamasfe.even-better-toml",
+    "serayuzgur.crates",
+    "vadimcn.vscode-lldb",
+
+    // Docker / 인프라
+    "ms-azuretools.vscode-docker",
+    "ms-vscode-remote.remote-containers",
+
+    // Protocol Buffers
+    "zxh404.vscode-proto3",
+
+    // REST API 테스트
+    "humao.rest-client",
+
+    // 코드 품질
+    "usernamehw.errorlens",
+    "streetsidesoftware.code-spell-checker",
+
+    // Git
+    "eamodio.gitlens",
+    "mhutchie.git-graph",
+
+    // 기타
+    "editorconfig.editorconfig",
+    "ms-vscode.makefile-tools"
+  ]
+}

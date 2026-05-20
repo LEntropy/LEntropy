@@ -16,8 +16,7 @@ async fn main() -> anyhow::Result<()> {
 
     let config = nac_config::AppConfig::load()?;
 
-    let app = Router::new()
-        .route("/healthz", get(health_check));
+    let app = Router::new().route("/healthz", get(health_check));
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;
     tracing::info!(addr = %config.listen_addr, "listening");

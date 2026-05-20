@@ -1,0 +1,30 @@
+[build]
+# lld 링커로 빌드 속도 개선 (Linux)
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+# incremental 컴파일 활성화 (dev 빌드)
+incremental = true
+
+[profile.dev]
+# 디버그 빌드: 최소 최적화 + 전체 디버그 정보
+opt-level = 0
+debug = true
+split-debuginfo = "unpacked"
+
+[profile.dev.package."*"]
+# 의존성 crate는 약간 최적화해서 테스트 속도 개선
+opt-level = 2
+
+# ── Cargo alias 단축키 ────────────────────────────────────────────────────
+[alias]
+# cargo c  → cargo check --workspace
+c   = "check --workspace"
+# cargo t  → cargo nextest run (설치 시) 또는 test
+t   = "test --workspace"
+# cargo b  → cargo build --workspace
+b   = "build --workspace"
+# cargo cl → cargo clippy --workspace -- -D warnings
+cl  = "clippy --workspace -- -D warnings"
+# cargo f  → cargo fmt --all
+f   = "fmt --all"
+# cargo w  → cargo watch -x 'check --workspace'
+w   = "watch -x 'check --workspace'"

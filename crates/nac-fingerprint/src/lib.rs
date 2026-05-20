@@ -14,26 +14,26 @@ pub enum Confidence {
 /// A device fingerprint result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Fingerprint {
-    pub os_family:   Option<String>,
-    pub os_version:  Option<String>,
+    pub os_family: Option<String>,
+    pub os_version: Option<String>,
     pub device_type: Option<String>,
-    pub vendor:      Option<String>,
-    pub confidence:  Confidence,
+    pub vendor: Option<String>,
+    pub confidence: Confidence,
 }
 
 /// Raw signals collected during device discovery.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FingerprintSignals {
     /// MAC OUI (first 3 bytes as hex, e.g. "001122")
-    pub oui:           Option<String>,
+    pub oui: Option<String>,
     /// DHCP option 55 parameter request list (raw bytes)
-    pub dhcp_prl:      Option<Vec<u8>>,
+    pub dhcp_prl: Option<Vec<u8>>,
     /// HTTP User-Agent string if captured
-    pub user_agent:    Option<String>,
+    pub user_agent: Option<String>,
     /// TCP initial window size
-    pub tcp_win_size:  Option<u16>,
+    pub tcp_win_size: Option<u16>,
     /// TCP options fingerprint string (e.g. "MSS,NOP,WS,NOP,NOP,TS,SACK")
-    pub tcp_options:   Option<String>,
+    pub tcp_options: Option<String>,
 }
 
 /// Identify a device from collected signals.
@@ -41,11 +41,11 @@ pub struct FingerprintSignals {
 /// Returns a best-effort [`Fingerprint`] based on heuristics and OUI lookups.
 pub fn identify(signals: &FingerprintSignals) -> Result<Fingerprint> {
     let mut fp = Fingerprint {
-        os_family:   None,
-        os_version:  None,
+        os_family: None,
+        os_version: None,
         device_type: None,
-        vendor:      None,
-        confidence:  Confidence::Low,
+        vendor: None,
+        confidence: Confidence::Low,
     };
 
     // OUI-based vendor detection

@@ -1,0 +1,104 @@
+version: "3.9"
+
+# 통합 테스트용 가상 네트워크 랩
+# 사용법: docker compose -f docker-compose.yml -f docker-compose.lab.yml up -d
+
+networks:
+  # 정상 단말 네트워크 (허용 VLAN 시뮬레이션)
+  corp_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.10.0/24
+          gateway: 192.168.10.1
+
+  # 격리 네트워크 (Quarantine VLAN 시뮬레이션)
+  quarantine_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.99.0/24
+          gateway: 192.168.99.1
+
+services:
+  # ── 정상 단말 시뮬레이터 ─────────────────────────────────────────────
+  endpoint-normal:
+    image: alpine:3.19
+    container_name: endpoint-normal
+    networks:
+      corp_net:
+        ipv4_address: 192.168.10.100
+    command: >
+      sh -c "apk add --no-cache curl &&
+             while true; do
+               curl -s http://192.168.10.1/healthz || true;
+               sleep 10;
+             done"
+    restart: unless-stopped
+
+  # ── 비인가 단말 시뮬레이터 ───────────────────────────────────────────
+  endpoint-rogue:
+    image: alpine:3.19
+    container_name: endpoint-rogue
+    networks:
+      corp_net:
+        ipv4_address: 192.168.10.200
+    command: sh -c "while true; do sleep 30; done"
+    restart: unless-stopped
+
+  # ── 격리 단말 시뮬레이터 ─────────────────────────────────────────────
+  endpoint-quarantined:
+    image: alpine:3.19
+    container_name: endpoint-quarantined
+    networks:
+      quarantine_net:
+        ipv4_address: 192.168.99.100
+    command: sh -c "while true; do sleep 30; done"
+    restart: unless-stopped
+
+  # ── 테스트용 LDAP (OpenLDAP) ──────────────────────────────────────────
+  ldap:
+    image: osixia/openldap:1.5.0
+    container_name: nac-ldap
+    environment:
+      LDAP_ORGANISATION: "NAC Lab"
+      LDAP_DOMAIN: "lab.local"
+      LDAP_ADMIN_PASSWORD: "admin"
+      LDAP_CONFIG_PASSWORD: "config"
+      LDAP_TLS: "false"
+    ports:
+      - "389:389"
+    networks:
+      - corp_net
+    volumes:
+      - ldap_data:/var/lib/ldap
+      - ldap_config:/etc/ldap/slapd.d
+
+  # ── LDAP Admin UI ────────────────────────────────────────────────────
+  phpldapadmin:
+    image: osixia/phpldapadmin:0.9.0
+    container_name: nac-ldapadmin
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: ldap
+      PHPLDAPADMIN_HTTPS: "false"
+    ports:
+      - "8089:80"
+    networks:
+      - corp_net
+    depends_on:
+      - ldap
+
+  # ── 패킷 캡처 (tcpdump 기반) ─────────────────────────────────────────
+  packet-capture:
+    image: nicolaka/netshoot:latest
+    container_name: nac-capture
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    command: sh -c "while true; do sleep 30; done"
+    restart: unless-stopped
+
+volumes:
+  ldap_data:
+  ldap_config:

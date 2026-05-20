@@ -1,0 +1,44 @@
+[graph]
+# 분석 대상 타겟 (host 도구 제외)
+targets = [{ triple = "x86_64-unknown-linux-gnu" }]
+
+# ── 보안 취약점 ───────────────────────────────────────────────────────────
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "deny"
+notice = "warn"
+
+# ── 라이선스 ─────────────────────────────────────────────────────────────
+[licenses]
+# 허용할 라이선스 목록
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "OpenSSL",
+]
+deny = ["GPL-2.0", "GPL-3.0", "AGPL-3.0"]
+copyleft = "warn"
+allow-osi-fsf-free = "neither"
+default = "deny"
+confidence-threshold = 0.8
+
+# ── 중복 crate ────────────────────────────────────────────────────────────
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+# ── 소스 ─────────────────────────────────────────────────────────────────
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

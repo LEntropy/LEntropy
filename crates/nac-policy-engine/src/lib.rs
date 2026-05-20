@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub mod rule;
 pub mod evaluator;
+pub mod rule;
 
 /// Errors produced by the policy engine.
 #[derive(Debug, Error)]
@@ -33,13 +33,13 @@ pub enum PolicyDecision {
 /// Context provided to the policy engine for evaluation.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PolicyContext {
-    pub mac_address:  String,
-    pub ip_address:   Option<String>,
-    pub hostname:     Option<String>,
-    pub os_family:    Option<String>,
-    pub device_type:  Option<String>,
-    pub username:     Option<String>,
-    pub groups:       Vec<String>,
+    pub mac_address: String,
+    pub ip_address: Option<String>,
+    pub hostname: Option<String>,
+    pub os_family: Option<String>,
+    pub device_type: Option<String>,
+    pub username: Option<String>,
+    pub groups: Vec<String>,
     pub is_compliant: Option<bool>,
-    pub switch_port:  Option<String>,
+    pub switch_port: Option<String>,
 }

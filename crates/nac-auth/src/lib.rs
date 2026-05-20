@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub mod ldap;
 pub mod jwt;
+pub mod ldap;
 
 /// Authentication errors.
 #[derive(Debug, Error)]
@@ -39,8 +39,8 @@ pub struct UserIdentity {
 /// Claims embedded in a NAC JWT.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NacClaims {
-    pub sub:    String,
+    pub sub: String,
     pub groups: Vec<String>,
-    pub exp:    i64,
-    pub iat:    i64,
+    pub exp: i64,
+    pub iat: i64,
 }

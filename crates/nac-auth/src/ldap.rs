@@ -7,7 +7,11 @@ pub struct LdapClient {
 }
 
 impl LdapClient {
-    pub fn new(url: impl Into<String>, bind_dn: impl Into<String>, bind_pw: impl Into<String>) -> Self {
+    pub fn new(
+        url: impl Into<String>,
+        bind_dn: impl Into<String>,
+        bind_pw: impl Into<String>,
+    ) -> Self {
         Self {
             url: url.into(),
             bind_dn: bind_dn.into(),

@@ -1,0 +1,55 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "api-gateway",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": { "args": ["build", "-p", "api-gateway"], "filter": { "name": "api-gateway", "kind": "bin" } },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "env": { "RUST_LOG": "debug" }
+    },
+    {
+      "name": "policy-manager",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": { "args": ["build", "-p", "policy-manager"], "filter": { "name": "policy-manager", "kind": "bin" } },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "env": { "RUST_LOG": "debug" }
+    },
+    {
+      "name": "sensor",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": { "args": ["build", "-p", "sensor"], "filter": { "name": "sensor", "kind": "bin" } },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "env": { "RUST_LOG": "debug" }
+    },
+    {
+      "name": "enforcement",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": { "args": ["build", "-p", "enforcement"], "filter": { "name": "enforcement", "kind": "bin" } },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "env": { "RUST_LOG": "debug" }
+    },
+    {
+      "name": "aaa",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": { "args": ["build", "-p", "aaa"], "filter": { "name": "aaa", "kind": "bin" } },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "env": { "RUST_LOG": "debug" }
+    }
+  ]
+}

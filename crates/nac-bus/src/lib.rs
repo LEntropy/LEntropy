@@ -12,7 +12,9 @@ impl NatsBus {
     }
 
     pub async fn publish(&self, subject: &str, payload: Vec<u8>) -> Result<()> {
-        self.client.publish(subject.to_string(), payload.into()).await?;
+        self.client
+            .publish(subject.to_string(), payload.into())
+            .await?;
         Ok(())
     }
 }

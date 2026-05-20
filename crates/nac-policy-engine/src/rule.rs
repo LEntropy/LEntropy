@@ -1,7 +1,7 @@
 //! Policy rule definitions and condition types.
 
-use serde::{Deserialize, Serialize};
 use crate::PolicyDecision;
+use serde::{Deserialize, Serialize};
 
 /// A single match condition within a rule.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,11 +27,11 @@ pub enum Condition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyRule {
     /// Human-readable rule name.
-    pub name:      String,
+    pub name: String,
     /// Lower value = higher priority (evaluated first).
-    pub priority:  i32,
+    pub priority: i32,
     /// Conditions that must match for this rule to trigger.
     pub condition: Condition,
     /// Decision to apply when this rule matches.
-    pub decision:  PolicyDecision,
+    pub decision: PolicyDecision,
 }

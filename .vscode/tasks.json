@@ -1,0 +1,63 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "cargo: check workspace",
+      "type": "shell",
+      "command": "cargo check --workspace",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "cargo: clippy",
+      "type": "shell",
+      "command": "cargo clippy --workspace -- -D warnings",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "cargo: test",
+      "type": "shell",
+      "command": "cargo test --workspace",
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "cargo: watch (check)",
+      "type": "shell",
+      "command": "cargo watch -x 'check --workspace'",
+      "isBackground": true,
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": {
+        "owner": "rust",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": { "regexp": "^\\s+-->\\s(.+):(\\d+):(\\d+)$", "file": 1, "line": 2, "column": 3 },
+        "background": { "activeOnStart": true, "beginsPattern": "^\\[Running\\b", "endsPattern": "^\\[Finished\\b" }
+      }
+    },
+    {
+      "label": "docker: dev-up",
+      "type": "shell",
+      "command": "docker compose up -d && docker compose ps",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "docker: dev-down",
+      "type": "shell",
+      "command": "docker compose down",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "make: setup",
+      "type": "shell",
+      "command": "make setup",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    }
+  ]
+}

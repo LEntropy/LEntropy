@@ -30,16 +30,28 @@ pub fn parse_dhcp_binding(payload: &[u8]) -> Result<DhcpBinding, NetProtoError> 
     let mut i = 236 + 4; // skip magic cookie
     while i + 1 < payload.len() {
         let code = payload[i];
-        if code == 255 { break; }
-        if code == 0 { i += 1; continue; }
+        if code == 255 {
+            break;
+        }
+        if code == 0 {
+            i += 1;
+            continue;
+        }
         let len = payload[i + 1] as usize;
         if code == 51 && len == 4 && i + 2 + len <= payload.len() {
             lease_secs = u32::from_be_bytes([
-                payload[i+2], payload[i+3], payload[i+4], payload[i+5],
+                payload[i + 2],
+                payload[i + 3],
+                payload[i + 4],
+                payload[i + 5],
             ]);
         }
         i += 2 + len;
     }
 
-    Ok(DhcpBinding { client_mac: mac, offered_ip: yiaddr, lease_secs })
+    Ok(DhcpBinding {
+        client_mac: mac,
+        offered_ip: yiaddr,
+        lease_secs,
+    })
 }

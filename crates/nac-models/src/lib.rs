@@ -28,34 +28,34 @@ pub enum AccessStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Endpoint {
     /// MAC address of the device.
-    pub mac_address:  String,
+    pub mac_address: String,
     /// Last known IPv4 address.
-    pub ip_address:   Option<String>,
+    pub ip_address: Option<String>,
     /// Hostname discovered via DNS/DHCP.
-    pub hostname:     Option<String>,
+    pub hostname: Option<String>,
     /// OS family from fingerprinting (e.g. "Windows", "Linux", "iOS").
-    pub os_family:    Option<String>,
+    pub os_family: Option<String>,
     /// Device category (e.g. "Workstation", "Mobile", "IoT").
-    pub device_type:  Option<String>,
+    pub device_type: Option<String>,
     /// Authenticated username (from 802.1X / Captive Portal).
-    pub username:     Option<String>,
+    pub username: Option<String>,
     /// VLAN the device is currently assigned to.
-    pub vlan_id:      Option<u16>,
+    pub vlan_id: Option<u16>,
     /// Switch port identifier (e.g. "GigabitEthernet0/1").
-    pub switch_port:  Option<String>,
+    pub switch_port: Option<String>,
     /// Current access status.
-    pub status:       AccessStatus,
+    pub status: AccessStatus,
     /// Unix timestamp of first seen.
-    pub first_seen:   i64,
+    pub first_seen: i64,
     /// Unix timestamp of last seen.
-    pub last_seen:    i64,
+    pub last_seen: i64,
 }
 
 /// A VLAN definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Vlan {
-    pub id:          u16,
-    pub name:        String,
+    pub id: u16,
+    pub name: String,
     pub description: Option<String>,
     pub is_quarantine: bool,
 }
@@ -63,10 +63,10 @@ pub struct Vlan {
 /// A switch port on a managed network device.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SwitchPort {
-    pub switch_id:   String,
-    pub port_id:     String,
+    pub switch_id: String,
+    pub port_id: String,
     pub description: Option<String>,
-    pub vlan_id:     Option<u16>,
+    pub vlan_id: Option<u16>,
     pub mac_address: Option<String>,
 }
 
@@ -78,16 +78,16 @@ mod tests {
     fn test_endpoint_serialization() {
         let ep = Endpoint {
             mac_address: "AA:BB:CC:DD:EE:FF".into(),
-            ip_address:  Some("192.168.1.100".into()),
-            hostname:    Some("workstation-01".into()),
-            os_family:   Some("Windows".into()),
+            ip_address: Some("192.168.1.100".into()),
+            hostname: Some("workstation-01".into()),
+            os_family: Some("Windows".into()),
             device_type: Some("Workstation".into()),
-            username:    Some("alice".into()),
-            vlan_id:     Some(10),
+            username: Some("alice".into()),
+            vlan_id: Some(10),
             switch_port: Some("Gi0/1".into()),
-            status:      AccessStatus::Allowed,
-            first_seen:  0,
-            last_seen:   0,
+            status: AccessStatus::Allowed,
+            first_seen: 0,
+            last_seen: 0,
         };
         let json = serde_json::to_string(&ep).unwrap();
         let decoded: Endpoint = serde_json::from_str(&json).unwrap();

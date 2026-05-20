@@ -22,6 +22,8 @@ pub struct EndpointRow {
     pub status: String,
     pub first_seen: OffsetDateTime,
     pub last_seen: OffsetDateTime,
+    pub is_compliant: Option<bool>,
+    pub last_posture_check: Option<OffsetDateTime>,
 }
 
 /// 단말 신규 등록 / 업서트용 파라미터
@@ -68,7 +70,7 @@ impl<'a> EndpointRepo<'a> {
                 id, mac_address::text, ip_address::text,
                 hostname, os_family, os_version, device_type, vendor,
                 vlan_id, switch_port, interface, username, status,
-                first_seen, last_seen
+                first_seen, last_seen, is_compliant, last_posture_check
             "#,
         )
         .bind(&ep.mac_address)
@@ -92,7 +94,7 @@ impl<'a> EndpointRepo<'a> {
             SELECT id, mac_address::text, ip_address::text,
                    hostname, os_family, os_version, device_type, vendor,
                    vlan_id, switch_port, interface, username, status,
-                   first_seen, last_seen
+                   first_seen, last_seen, is_compliant, last_posture_check
             FROM endpoints
             ORDER BY last_seen DESC
             LIMIT $1 OFFSET $2
@@ -113,7 +115,7 @@ impl<'a> EndpointRepo<'a> {
             SELECT id, mac_address::text, ip_address::text,
                    hostname, os_family, os_version, device_type, vendor,
                    vlan_id, switch_port, interface, username, status,
-                   first_seen, last_seen
+                   first_seen, last_seen, is_compliant, last_posture_check
             FROM endpoints
             WHERE mac_address = $1::macaddr
             "#,
@@ -132,7 +134,7 @@ impl<'a> EndpointRepo<'a> {
             SELECT id, mac_address::text, ip_address::text,
                    hostname, os_family, os_version, device_type, vendor,
                    vlan_id, switch_port, interface, username, status,
-                   first_seen, last_seen
+                   first_seen, last_seen, is_compliant, last_posture_check
             FROM endpoints
             WHERE id = $1
             "#,
@@ -161,6 +163,18 @@ impl<'a> EndpointRepo<'a> {
             .bind(id)
             .execute(self.pool)
             .await?;
+        Ok(())
+    }
+
+    /// compliance 업데이트
+    pub async fn set_compliance(&self, id: Uuid, is_compliant: bool) -> Result<()> {
+        sqlx::query(
+            "UPDATE endpoints SET is_compliant = $1, last_posture_check = NOW() WHERE id = $2",
+        )
+        .bind(is_compliant)
+        .bind(id)
+        .execute(self.pool)
+        .await?;
         Ok(())
     }
 

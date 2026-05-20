@@ -34,12 +34,19 @@ name = "agent-gateway"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-nats",
+ "nac-auth",
  "nac-bus",
  "nac-config",
  "nac-crypto",
  "nac-models",
  "nac-proto",
+ "nac-store",
  "rustls",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "time",
  "tokio",
  "tokio-rustls",
  "tonic",
@@ -1671,6 +1678,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "rustls",
+ "rustls-pemfile",
  "thiserror 2.0.18",
  "tokio-rustls",
 ]

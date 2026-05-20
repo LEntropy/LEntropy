@@ -5,6 +5,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 mod api;
 mod consumer;
+mod posture_handler;
 mod session_handler;
 
 #[tokio::main]
@@ -50,6 +51,15 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         if let Err(e) = session_handler::run(auth_nats, auth_pool).await {
             tracing::error!(error = %e, "auth response consumer error");
+        }
+    });
+
+    // NATS 소비자 태스크 — posture 무결성 보고서 처리
+    let posture_pool = pool.clone();
+    let posture_nats = nats.clone();
+    tokio::spawn(async move {
+        if let Err(e) = posture_handler::run(posture_nats, posture_pool).await {
+            tracing::error!(error = %e, "posture handler error");
         }
     });
 

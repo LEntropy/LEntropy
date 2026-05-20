@@ -42,13 +42,12 @@ impl<'a> PolicyRepo<'a> {
 /// DB PolicyRow → nac-policy-engine PolicyRule 변환
 fn to_policy_rule(row: &PolicyRow) -> Result<PolicyRule> {
     // conditions 컬럼이 빈 배열이면 항상 매칭되는 And{} 조건 사용
-    let conditions: Vec<Condition> = if row.conditions.is_null()
-        || row.conditions == serde_json::Value::Array(vec![])
-    {
-        vec![]
-    } else {
-        serde_json::from_value::<Vec<Condition>>(row.conditions.clone())?
-    };
+    let conditions: Vec<Condition> =
+        if row.conditions.is_null() || row.conditions == serde_json::Value::Array(vec![]) {
+            vec![]
+        } else {
+            serde_json::from_value::<Vec<Condition>>(row.conditions.clone())?
+        };
 
     let condition = match conditions.len() {
         0 => Condition::And { conditions: vec![] }, // always-match (e.g. default-allow)

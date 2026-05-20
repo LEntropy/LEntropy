@@ -27,7 +27,7 @@ tonic          = "0.12"
 prost          = "0.13"
 serde          = { version = "1", features = ["derive"] }
 serde_json     = "1"
-sqlx           = { version = "0.8", features = ["postgres", "runtime-tokio", "tls-rustls"] }
+sqlx           = { version = "0.8", features = ["postgres", "runtime-tokio", "tls-rustls", "uuid", "time"] }
 pnet           = "0.35"
 rustls         = "0.23"
 tokio-rustls   = "0.26"
@@ -39,6 +39,8 @@ tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 anyhow    = "1"
 thiserror = "2"
 config    = "0.14"
+uuid      = { version = "1", features = ["v4", "serde"] }
+time      = { version = "0.3", features = ["serde"] }
 
 [profile.release]
 opt-level = 3

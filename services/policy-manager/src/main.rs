@@ -1,10 +1,12 @@
-//! policy-manager: REST API + gRPC server for NAC policy lifecycle management.
+use std::net::SocketAddr;
 
+use sqlx::postgres::PgPoolOptions;
 use tracing_subscriber::{fmt, EnvFilter};
+
+mod api;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialise structured JSON logging; fall back to INFO if RUST_LOG is unset.
     fmt()
         .json()
         .with_env_filter(
@@ -14,15 +16,35 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!(service = "policy-manager", "starting up");
 
-    // Load configuration from environment variables.
-    let _config = nac_config::AppConfig::load()?;
+    let config = nac_config::AppConfig::load()?;
 
-    tracing::info!("configuration loaded");
+    // DB 연결 풀
+    let pool = PgPoolOptions::new()
+        .max_connections(20)
+        .connect(&config.database_url)
+        .await?;
+    tracing::info!("database connected");
 
-    // TODO: initialise DB pool (nac-store), NATS bus (nac-bus), and axum/tonic servers.
+    // 마이그레이션 자동 적용
+    sqlx::migrate!("./migrations").run(&pool).await?;
+    tracing::info!("database migrations applied");
 
-    // Keep the process alive until signalled.
-    tokio::signal::ctrl_c().await?;
+    let app = api::router(pool);
+    let addr: SocketAddr = config.listen_addr.parse()?;
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    tracing::info!(addr = %addr, "listening");
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
     tracing::info!("shutting down");
     Ok(())
+}
+
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to install Ctrl-C handler");
 }

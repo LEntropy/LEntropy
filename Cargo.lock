@@ -343,6 +343,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bumpalo"
+version = "3.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d20789868f4b01b2f2caec9f5c4e0213b41e3e5702a50157d699ae31ced2fcb"
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1392,6 +1398,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "js-sys"
+version = "0.3.98"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67df7112613f8bfd9150013a0314e196f4800d3201ae742489d999db2f979f08"
+dependencies = [
+ "cfg-if",
+ "futures-util",
+ "once_cell",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "json5"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1677,9 +1695,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "serde",
+ "serde_json",
  "sqlx",
  "thiserror 2.0.18",
+ "time",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -2138,6 +2159,7 @@ dependencies = [
  "tonic-build",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -2573,6 +2595,7 @@ name = "sensor"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-nats",
  "nac-bus",
  "nac-config",
  "nac-fingerprint",
@@ -2847,10 +2870,12 @@ dependencies = [
  "sha2",
  "smallvec",
  "thiserror 2.0.18",
+ "time",
  "tokio",
  "tokio-stream",
  "tracing",
  "url",
+ "uuid",
  "webpki-roots 0.26.11",
 ]
 
@@ -2930,7 +2955,9 @@ dependencies = [
  "sqlx-core",
  "stringprep",
  "thiserror 2.0.18",
+ "time",
  "tracing",
+ "uuid",
  "whoami",
 ]
 
@@ -2967,7 +2994,9 @@ dependencies = [
  "sqlx-core",
  "stringprep",
  "thiserror 2.0.18",
+ "time",
  "tracing",
+ "uuid",
  "whoami",
 ]
 
@@ -2991,8 +3020,10 @@ dependencies = [
  "serde_urlencoded",
  "sqlx-core",
  "thiserror 2.0.18",
+ "time",
  "tracing",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -3601,6 +3632,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
+name = "uuid"
+version = "1.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ddd74a9687298c6858e9b88ec8935ec45d22e8fd5e6394fa1bd4e99a87789c76"
+dependencies = [
+ "getrandom 0.4.2",
+ "js-sys",
+ "serde_core",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3656,6 +3699,51 @@ name = "wasite"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8dad83b4f25e74f184f64c43b150b91efe7647395b42289f38e50566d82855b"
+
+[[package]]
+name = "wasm-bindgen"
+version = "0.2.121"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49ace1d07c165b0864824eee619580c4689389afa9dc9ed3a4c75040d82e6790"
+dependencies = [
+ "cfg-if",
+ "once_cell",
+ "rustversion",
+ "wasm-bindgen-macro",
+ "wasm-bindgen-shared",
+]
+
+[[package]]
+name = "wasm-bindgen-macro"
+version = "0.2.121"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e68e6f4afd367a562002c05637acb8578ff2dea1943df76afb9e83d177c8578"
+dependencies = [
+ "quote",
+ "wasm-bindgen-macro-support",
+]
+
+[[package]]
+name = "wasm-bindgen-macro-support"
+version = "0.2.121"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d95a9ec35c64b2a7cb35d3fead40c4238d0940c86d107136999567a4703259f2"
+dependencies = [
+ "bumpalo",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+ "wasm-bindgen-shared",
+]
+
+[[package]]
+name = "wasm-bindgen-shared"
+version = "0.2.121"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4e0100b01e9f0d03189a92b96772a1fb998639d981193d7dbab487302513441"
+dependencies = [
+ "unicode-ident",
+]
 
 [[package]]
 name = "wasm-encoder"

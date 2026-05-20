@@ -19,6 +19,7 @@ nac-store          = { path = "../../crates/nac-store" }
 nac-policy-engine  = { path = "../../crates/nac-policy-engine" }
 nac-config         = { path = "../../crates/nac-config" }
 nac-bus            = { path = "../../crates/nac-bus" }
+uuid               = { workspace = true }
 
 [build-dependencies]
 tonic-build = "0.12"

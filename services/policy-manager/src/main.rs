@@ -4,6 +4,7 @@ use sqlx::postgres::PgPoolOptions;
 use tracing_subscriber::{fmt, EnvFilter};
 
 mod api;
+mod consumer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -29,6 +30,20 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!("./migrations").run(&pool).await?;
     tracing::info!("database migrations applied");
 
+    // NATS 연결
+    let nats = async_nats::connect(&config.nats_url).await?;
+    tracing::info!(nats_url = %config.nats_url, "NATS connected");
+
+    // NATS 소비자 태스크
+    let consumer_pool = pool.clone();
+    let consumer_nats = nats.clone();
+    tokio::spawn(async move {
+        if let Err(e) = consumer::run(consumer_nats, consumer_pool).await {
+            tracing::error!(error = %e, "NATS consumer error");
+        }
+    });
+
+    // REST API 서버
     let app = api::router(pool);
     let addr: SocketAddr = config.listen_addr.parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;

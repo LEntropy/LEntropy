@@ -20,6 +20,8 @@ nac-policy-engine  = { path = "../../crates/nac-policy-engine" }
 nac-config         = { path = "../../crates/nac-config" }
 nac-bus            = { path = "../../crates/nac-bus" }
 uuid               = { workspace = true }
+async-nats         = { workspace = true }
+futures-util       = "0.3"
 
 [build-dependencies]
 tonic-build = "0.12"

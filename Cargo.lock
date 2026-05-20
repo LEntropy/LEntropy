@@ -2144,7 +2144,9 @@ name = "policy-manager"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-nats",
  "axum 0.8.9",
+ "futures-util",
  "nac-bus",
  "nac-config",
  "nac-models",

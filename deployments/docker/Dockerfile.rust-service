@@ -1,0 +1,44 @@
+# Multi-stage build for Rust services
+ARG SERVICE_NAME
+
+FROM rust:1.87-slim AS builder
+ARG SERVICE_NAME
+
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Cargo 의존성 캐시 레이어
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates/ crates/
+COPY proto/ proto/
+COPY services/${SERVICE_NAME}/Cargo.toml services/${SERVICE_NAME}/
+
+# 더미 main으로 의존성만 빌드 (캐시 최적화)
+RUN mkdir -p services/${SERVICE_NAME}/src && \
+    echo 'fn main() {}' > services/${SERVICE_NAME}/src/main.rs && \
+    cargo build --release -p ${SERVICE_NAME} 2>/dev/null || true
+
+# 실제 소스 복사 및 빌드
+COPY services/${SERVICE_NAME}/src/ services/${SERVICE_NAME}/src/
+RUN touch services/${SERVICE_NAME}/src/main.rs && \
+    cargo build --release -p ${SERVICE_NAME}
+
+FROM debian:bookworm-slim AS runtime
+ARG SERVICE_NAME
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -r -s /bin/false nac
+USER nac
+
+COPY --from=builder /build/target/release/${SERVICE_NAME} /usr/local/bin/service
+
+ENTRYPOINT ["/usr/local/bin/service"]

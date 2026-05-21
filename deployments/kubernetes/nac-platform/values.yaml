@@ -1,0 +1,209 @@
+# NAC Platform Helm Chart Values
+# 이 파일을 환경별로 오버라이드하여 사용하세요.
+
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# ── 공통 이미지 태그 ──────────────────────────────────────────────────────
+imageTag: "latest"
+imagePullPolicy: IfNotPresent
+
+# ── PostgreSQL (외부 DB 사용 시 enabled: false) ────────────────────────
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "changeme"
+    database: "nac"
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+
+# ── Redis ─────────────────────────────────────────────────────────────
+redis:
+  enabled: true
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 2Gi
+
+# ── NATS ──────────────────────────────────────────────────────────────
+nats:
+  enabled: true
+  replicaCount: 1
+
+# ── 공통 환경변수 (모든 서비스에 주입) ──────────────────────────────────
+commonEnv:
+  DATABASE_URL: "postgres://postgres:changeme@nac-platform-postgresql:5432/nac"
+  REDIS_URL: "redis://nac-platform-redis-master:6379"
+  NATS_URL: "nats://nac-platform-nats:4222"
+  JWT_SECRET: "change-me-in-production-min-32-chars"
+  RUST_LOG: "info"
+
+# ── Policy Manager ────────────────────────────────────────────────────
+policyManager:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: nac-platform/policy-manager
+  service:
+    port: 8001
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    LISTEN_ADDR: "0.0.0.0:8001"
+
+# ── AAA (Captive Portal + RADIUS) ─────────────────────────────────────
+aaa:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: nac-platform/aaa
+  service:
+    httpPort: 8080
+    radiusAuthPort: 1812
+    radiusAcctPort: 1813
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    CAPTIVE_PORTAL_ADDR: "0.0.0.0:8080"
+    RADIUS_AUTH_ADDR: "0.0.0.0:1812"
+    RADIUS_ACCT_ADDR: "0.0.0.0:1813"
+    RADIUS_SECRET: "radius-shared-secret"
+
+# ── Sensor ────────────────────────────────────────────────────────────
+sensor:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: nac-platform/sensor
+  hostNetwork: true  # 패킷 캡처를 위해 호스트 네트워크 필요
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  securityContext:
+    capabilities:
+      add:
+        - NET_RAW
+        - NET_ADMIN
+
+# ── Enforcement (PEA) ─────────────────────────────────────────────────
+enforcement:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: nac-platform/enforcement
+  hostNetwork: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  securityContext:
+    capabilities:
+      add:
+        - NET_RAW
+        - NET_ADMIN
+
+# ── Agent Gateway ─────────────────────────────────────────────────────
+agentGateway:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: nac-platform/agent-gateway
+  service:
+    port: 50051
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    GRPC_ADDR: "0.0.0.0:50051"
+
+# ── API Gateway ───────────────────────────────────────────────────────
+apiGateway:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: nac-platform/api-gateway
+  service:
+    port: 8000
+  ingress:
+    enabled: true
+    className: nginx
+    hosts:
+      - host: nac.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ── DHCP 서버 ─────────────────────────────────────────────────────────
+dhcp:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: nac-platform/dhcp
+  hostNetwork: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# ── Admin Console (정적 파일) ─────────────────────────────────────────
+adminConsole:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: nac-platform/admin-console
+  service:
+    port: 80
+  ingress:
+    enabled: true
+    className: nginx
+    hosts:
+      - host: nac-admin.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

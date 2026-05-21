@@ -1,0 +1,27 @@
+NAC Platform has been deployed!
+
+Services running:
+{{- if .Values.policyManager.enabled }}
+  - Policy Manager:   {{ include "nac-platform.fullname" . }}-policy-manager:{{ .Values.policyManager.service.port }}
+{{- end }}
+{{- if .Values.aaa.enabled }}
+  - AAA (Portal):     {{ include "nac-platform.fullname" . }}-aaa:{{ .Values.aaa.service.httpPort }}
+  - RADIUS Auth UDP:  {{ include "nac-platform.fullname" . }}-aaa:{{ .Values.aaa.service.radiusAuthPort }}
+{{- end }}
+{{- if .Values.agentGateway.enabled }}
+  - Agent Gateway:    {{ include "nac-platform.fullname" . }}-agent-gateway:{{ .Values.agentGateway.service.port }}
+{{- end }}
+{{- if .Values.apiGateway.enabled }}
+  - API Gateway:      {{ include "nac-platform.fullname" . }}-api-gateway:{{ .Values.apiGateway.service.port }}
+{{- end }}
+{{- if .Values.adminConsole.enabled }}
+  - Admin Console:    {{ include "nac-platform.fullname" . }}-admin-console:{{ .Values.adminConsole.service.port }}
+{{- end }}
+
+Get admin console URL:
+  kubectl get ingress -l app.kubernetes.io/instance={{ .Release.Name }}
+
+IMPORTANT: Change all default secrets before production deployment!
+  - JWT_SECRET
+  - RADIUS_SECRET
+  - PostgreSQL password

@@ -1,0 +1,20 @@
+[package]
+name = "endpoint-agent"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio              = { workspace = true }
+tonic              = { workspace = true }
+rustls             = { workspace = true }
+tokio-rustls       = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow             = { workspace = true }
+serde              = { workspace = true }
+serde_json         = { workspace = true }
+nac-proto          = { path = "../../crates/nac-proto" }
+nac-config         = { path = "../../crates/nac-config" }
+uuid               = { workspace = true }
+time               = { workspace = true }
+sys-info           = "0.9"

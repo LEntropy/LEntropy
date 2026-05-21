@@ -1,11 +1,12 @@
 //! aaa: Authentication, Authorization, and Accounting service.
-//!      Provides a Captive Portal HTTP endpoint for NAC authentication.
+//!      Provides Captive Portal HTTP endpoint + RADIUS server (UDP 1812/1813).
 
 use std::sync::Arc;
 
 use tracing_subscriber::{fmt, EnvFilter};
 
 mod captive_portal;
+pub mod radius;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -55,6 +56,32 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or("change-me-in-production-min-32-chars")
         .as_bytes()
         .to_vec();
+
+    // ── RADIUS 서버 태스크 (UDP 1812/1813) ───────────────────────────────
+    let radius_secret = config
+        .radius_secret
+        .clone()
+        .unwrap_or_else(|| "radius-shared-secret".to_string());
+    let radius_auth_addr = config
+        .radius_auth_addr
+        .clone()
+        .unwrap_or_else(|| "0.0.0.0:1812".to_string());
+    let radius_acct_addr = config
+        .radius_acct_addr
+        .clone()
+        .unwrap_or_else(|| "0.0.0.0:1813".to_string());
+
+    tokio::spawn(async move {
+        if let Err(e) = radius::run_radius_server(
+            &radius_auth_addr,
+            &radius_acct_addr,
+            radius_secret.into_bytes(),
+        )
+        .await
+        {
+            tracing::error!(error = %e, "RADIUS server error");
+        }
+    });
 
     // ── Captive Portal 상태 ───────────────────────────────────────────────
     let state = Arc::new(captive_portal::PortalState {

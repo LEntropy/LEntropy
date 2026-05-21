@@ -20,6 +20,11 @@ pub struct AppConfig {
 
     // Captive Portal
     pub captive_portal_addr: Option<String>,
+
+    // RADIUS
+    pub radius_secret: Option<String>,
+    pub radius_auth_addr: Option<String>,
+    pub radius_acct_addr: Option<String>,
 }
 
 impl AppConfig {

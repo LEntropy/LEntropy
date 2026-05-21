@@ -11,6 +11,7 @@ serde_json         = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow             = { workspace = true }
+reqwest            = { version = "0.12", features = ["json"] }
 nac-auth           = { path = "../../crates/nac-auth" }
 nac-models         = { path = "../../crates/nac-models" }
 nac-config         = { path = "../../crates/nac-config" }

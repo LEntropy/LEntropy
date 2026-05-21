@@ -19,6 +19,7 @@ uuid               = { workspace = true }
 time               = { workspace = true }
 sqlx               = { workspace = true }
 futures-util       = "0.3"
+md5                = "0.7"
 nac-auth           = { path = "../../crates/nac-auth" }
 nac-crypto         = { path = "../../crates/nac-crypto" }
 nac-models         = { path = "../../crates/nac-models" }

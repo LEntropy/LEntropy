@@ -2,6 +2,7 @@ pub mod audit;
 pub mod endpoints;
 pub mod health;
 pub mod policies;
+pub mod stats;
 
 use axum::Router;
 use sqlx::PgPool;
@@ -14,14 +15,23 @@ pub fn router(pool: PgPool) -> Router {
 }
 
 fn v1_router(pool: PgPool) -> Router {
-    use axum::routing::get;
+    use axum::routing::{get, post};
     Router::new()
         // Endpoints
         .route("/endpoints", get(endpoints::list_endpoints))
-        .route("/endpoints/:id", get(endpoints::get_endpoint))
         .route("/endpoints/mac/:mac", get(endpoints::get_endpoint_by_mac))
+        .route("/endpoints/:id", get(endpoints::get_endpoint))
+        .route("/endpoints/:id/allow", post(endpoints::allow_endpoint))
+        .route("/endpoints/:id/block", post(endpoints::block_endpoint))
+        .route(
+            "/endpoints/:id/quarantine",
+            post(endpoints::quarantine_endpoint),
+        )
         // Policies
-        .route("/policies", get(policies::list_policies).post(policies::create_policy))
+        .route(
+            "/policies",
+            get(policies::list_policies).post(policies::create_policy),
+        )
         .route(
             "/policies/:id",
             get(policies::get_policy)
@@ -30,5 +40,7 @@ fn v1_router(pool: PgPool) -> Router {
         )
         // Audit log
         .route("/audit", get(audit::list_audit))
+        // Stats
+        .route("/stats", get(stats::get_stats))
         .with_state(pool)
 }

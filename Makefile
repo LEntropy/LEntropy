@@ -1,5 +1,6 @@
 .PHONY: all check test fmt lint build clean dev-up dev-down dev-lab-up dev-lab-down \
-        proto watch audit setup
+        proto watch audit setup \
+        dev-all-up build-all test-all test-integration
 
 all: check test
 
@@ -41,13 +42,26 @@ proto:
 
 ## Docker infra
 dev-up:
+	docker compose up -d postgres redis nats
+	@echo "Infrastructure up. Run services manually or: make dev-all-up"
+
+dev-all-up:
 	docker compose up -d
-	@echo "Waiting for services..."
-	@sleep 3
-	@docker compose ps
 
 dev-down:
 	docker compose down
+
+## Build / Test shortcuts
+build-all:
+	cargo build --workspace --release
+
+test-all:
+	cargo test --workspace
+	cd web/admin-console && npm run type-check
+
+test-integration:
+	POLICY_MANAGER_URL=http://localhost:8001 \
+	cargo test --manifest-path test/integration/Cargo.toml --features integration
 
 dev-logs:
 	docker compose logs -f

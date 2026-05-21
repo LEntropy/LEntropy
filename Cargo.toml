@@ -19,6 +19,7 @@ members = [
     "services/agent-gateway",
     "services/api-gateway",
     "services/endpoint-agent",
+    "test/integration",
 ]
 
 [workspace.dependencies]

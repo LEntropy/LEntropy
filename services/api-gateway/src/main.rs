@@ -113,21 +113,29 @@ async fn login(
 // ── Policy Manager 프록시 핸들러들 ────────────────────────────────────────
 
 async fn list_endpoints(State(state): State<Arc<AppState>>) -> Result<Response, StatusCode> {
-    proxy_get(&state.policy_manager_url, "/endpoints").await
+    proxy_get(&state.policy_manager_url, "/api/v1/endpoints").await
 }
 
 async fn allow_endpoint(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Response, StatusCode> {
-    proxy_post(&state.policy_manager_url, &format!("/endpoints/{id}/allow")).await
+    proxy_post(
+        &state.policy_manager_url,
+        &format!("/api/v1/endpoints/{id}/allow"),
+    )
+    .await
 }
 
 async fn block_endpoint(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Response, StatusCode> {
-    proxy_post(&state.policy_manager_url, &format!("/endpoints/{id}/block")).await
+    proxy_post(
+        &state.policy_manager_url,
+        &format!("/api/v1/endpoints/{id}/block"),
+    )
+    .await
 }
 
 async fn quarantine_endpoint(
@@ -136,13 +144,13 @@ async fn quarantine_endpoint(
 ) -> Result<Response, StatusCode> {
     proxy_post(
         &state.policy_manager_url,
-        &format!("/endpoints/{id}/quarantine"),
+        &format!("/api/v1/endpoints/{id}/quarantine"),
     )
     .await
 }
 
 async fn list_policies(State(state): State<Arc<AppState>>) -> Result<Response, StatusCode> {
-    proxy_get(&state.policy_manager_url, "/policies").await
+    proxy_get(&state.policy_manager_url, "/api/v1/policies").await
 }
 
 async fn create_policy(
@@ -150,7 +158,7 @@ async fn create_policy(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Result<Response, StatusCode> {
-    proxy_post_body(&state.policy_manager_url, "/policies", headers, body).await
+    proxy_post_body(&state.policy_manager_url, "/api/v1/policies", headers, body).await
 }
 
 async fn update_policy(
@@ -161,7 +169,7 @@ async fn update_policy(
 ) -> Result<Response, StatusCode> {
     proxy_put_body(
         &state.policy_manager_url,
-        &format!("/policies/{id}"),
+        &format!("/api/v1/policies/{id}"),
         headers,
         body,
     )
@@ -172,15 +180,15 @@ async fn delete_policy(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Response, StatusCode> {
-    proxy_delete(&state.policy_manager_url, &format!("/policies/{id}")).await
+    proxy_delete(&state.policy_manager_url, &format!("/api/v1/policies/{id}")).await
 }
 
 async fn list_audit(State(state): State<Arc<AppState>>) -> Result<Response, StatusCode> {
-    proxy_get(&state.policy_manager_url, "/audit").await
+    proxy_get(&state.policy_manager_url, "/api/v1/audit").await
 }
 
 async fn get_stats(State(state): State<Arc<AppState>>) -> Result<Response, StatusCode> {
-    proxy_get(&state.policy_manager_url, "/stats").await
+    proxy_get(&state.policy_manager_url, "/api/v1/stats").await
 }
 
 // ── HTTP 프록시 헬퍼 ──────────────────────────────────────────────────────

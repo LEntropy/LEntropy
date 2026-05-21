@@ -4,6 +4,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use nac_store::audit::AuditRepo;
 use nac_store::endpoint::EndpointRepo;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -81,6 +82,60 @@ pub async fn get_endpoint_by_mac(
             "endpoint with MAC {mac} not found"
         ))),
     }
+}
+
+// ── 상태 변경 헬퍼 ────────────────────────────────────────────────────────
+
+async fn update_endpoint_status(
+    pool: &PgPool,
+    id: Uuid,
+    status: &str,
+    event_type: &str,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let repo = EndpointRepo::new(pool);
+    match repo.find_by_id(id).await? {
+        None => Err(AppError::NotFound(format!("endpoint {id} not found"))),
+        Some(_) => {
+            repo.set_status(id, status).await?;
+            let audit = AuditRepo::new(pool);
+            audit
+                .log(
+                    event_type,
+                    Some(id),
+                    "api",
+                    serde_json::json!({ "status": status }),
+                )
+                .await?;
+            match repo.find_by_id(id).await? {
+                Some(ep) => Ok(Json(serde_json::to_value(ep)?)),
+                None => Err(AppError::NotFound(format!("endpoint {id} not found"))),
+            }
+        }
+    }
+}
+
+/// POST /api/v1/endpoints/:id/allow
+pub async fn allow_endpoint(
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    update_endpoint_status(&pool, id, "allowed", "endpoint_allowed").await
+}
+
+/// POST /api/v1/endpoints/:id/block
+pub async fn block_endpoint(
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    update_endpoint_status(&pool, id, "denied", "endpoint_blocked").await
+}
+
+/// POST /api/v1/endpoints/:id/quarantine
+pub async fn quarantine_endpoint(
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    update_endpoint_status(&pool, id, "quarantined", "endpoint_quarantined").await
 }
 
 // ── 에러 타입 ──────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 version: "3.9"
 
 services:
+  # ── 인프라 ──
   postgres:
     image: postgres:16-alpine
     environment:
@@ -40,6 +41,90 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # ── 앱 서비스 ──
+  policy-manager:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.rust-service
+      args:
+        SERVICE_NAME: policy-manager
+    environment:
+      DATABASE_URL: postgres://nac:nac_dev_password@postgres:5432/nac
+      REDIS_URL: redis://redis:6379
+      NATS_URL: nats://nats:4222
+      LISTEN_ADDR: "0.0.0.0:8001"
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+  aaa:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.rust-service
+      args:
+        SERVICE_NAME: aaa
+    environment:
+      DATABASE_URL: postgres://nac:nac_dev_password@postgres:5432/nac
+      NATS_URL: nats://nats:4222
+      CAPTIVE_PORTAL_ADDR: "0.0.0.0:8080"
+      RADIUS_AUTH_ADDR: "0.0.0.0:1812"
+      RADIUS_ACCT_ADDR: "0.0.0.0:1813"
+    ports:
+      - "8080:8080"
+      - "1812:1812/udp"
+      - "1813:1813/udp"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+  agent-gateway:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.rust-service
+      args:
+        SERVICE_NAME: agent-gateway
+    environment:
+      DATABASE_URL: postgres://nac:nac_dev_password@postgres:5432/nac
+      NATS_URL: nats://nats:4222
+      GRPC_ADDR: "0.0.0.0:50051"
+    ports:
+      - "50051:50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.rust-service
+      args:
+        SERVICE_NAME: api-gateway
+    environment:
+      LISTEN_ADDR: "0.0.0.0:8000"
+      POLICY_MANAGER_URL: http://policy-manager:8001
+      NATS_URL: nats://nats:4222
+    ports:
+      - "8000:8000"
+    depends_on:
+      - policy-manager
+
+  admin-console:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.admin-console
+    ports:
+      - "3000:80"
+    depends_on:
+      - api-gateway
 
 volumes:
   postgres_data:

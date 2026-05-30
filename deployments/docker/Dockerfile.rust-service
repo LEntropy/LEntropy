@@ -28,6 +28,9 @@ COPY services/api-gateway/Cargo.toml     services/api-gateway/
 COPY services/endpoint-agent/Cargo.toml  services/endpoint-agent/
 COPY test/integration/Cargo.toml         test/integration/
 
+# sqlx::migrate! 매크로는 컴파일 타임에 migrations 디렉토리를 읽음
+COPY services/policy-manager/migrations/ services/policy-manager/migrations/
+
 # 더미 main으로 의존성만 빌드 (캐시 최적화)
 RUN for svc in policy-manager sensor enforcement aaa dhcp agent-gateway api-gateway endpoint-agent; do \
         mkdir -p services/$svc/src && \

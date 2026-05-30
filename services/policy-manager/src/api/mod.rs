@@ -19,12 +19,12 @@ fn v1_router(pool: PgPool) -> Router {
     Router::new()
         // Endpoints
         .route("/endpoints", get(endpoints::list_endpoints))
-        .route("/endpoints/mac/:mac", get(endpoints::get_endpoint_by_mac))
-        .route("/endpoints/:id", get(endpoints::get_endpoint))
-        .route("/endpoints/:id/allow", post(endpoints::allow_endpoint))
-        .route("/endpoints/:id/block", post(endpoints::block_endpoint))
+        .route("/endpoints/mac/{mac}", get(endpoints::get_endpoint_by_mac))
+        .route("/endpoints/{id}", get(endpoints::get_endpoint))
+        .route("/endpoints/{id}/allow", post(endpoints::allow_endpoint))
+        .route("/endpoints/{id}/block", post(endpoints::block_endpoint))
         .route(
-            "/endpoints/:id/quarantine",
+            "/endpoints/{id}/quarantine",
             post(endpoints::quarantine_endpoint),
         )
         // Policies
@@ -33,7 +33,7 @@ fn v1_router(pool: PgPool) -> Router {
             get(policies::list_policies).post(policies::create_policy),
         )
         .route(
-            "/policies/:id",
+            "/policies/{id}",
             get(policies::get_policy)
                 .put(policies::update_policy)
                 .delete(policies::delete_policy),

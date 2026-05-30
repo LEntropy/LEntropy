@@ -56,7 +56,7 @@ impl<'a> EndpointRepo<'a> {
             INSERT INTO endpoints (mac_address, ip_address, hostname,
                                    os_family, os_version, device_type,
                                    vendor, interface)
-            VALUES ($1, $2::inet, $3, $4, $5, $6, $7, $8)
+            VALUES ($1::macaddr, $2::inet, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (mac_address) DO UPDATE SET
                 ip_address  = COALESCE(EXCLUDED.ip_address,  endpoints.ip_address),
                 hostname    = COALESCE(EXCLUDED.hostname,    endpoints.hostname),

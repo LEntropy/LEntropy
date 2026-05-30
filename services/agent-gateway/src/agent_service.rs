@@ -17,6 +17,28 @@ pub struct AgentServiceImpl {
     pub jwt_secret: Vec<u8>,
 }
 
+/// UUID device_id의 앞 6바이트를 MAC 주소 형식으로 변환 (PostgreSQL MACADDR 타입 호환)
+fn device_id_to_mac(device_id: &str) -> String {
+    let hex: String = device_id
+        .chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .take(12)
+        .collect();
+    if hex.len() == 12 {
+        format!(
+            "{}:{}:{}:{}:{}:{}",
+            &hex[0..2],
+            &hex[2..4],
+            &hex[4..6],
+            &hex[6..8],
+            &hex[8..10],
+            &hex[10..12]
+        )
+    } else {
+        "00:00:00:00:00:00".to_string()
+    }
+}
+
 #[tonic::async_trait]
 impl AgentService for AgentServiceImpl {
     async fn register(
@@ -26,9 +48,10 @@ impl AgentService for AgentServiceImpl {
         let req = request.into_inner();
         debug!(device_id = %req.device_id, os = %req.os, "agent register");
 
+        let mac = device_id_to_mac(&req.device_id);
         let repo = EndpointRepo::new(&self.pool);
         let ep = UpsertEndpoint {
-            mac_address: req.device_id.clone(),
+            mac_address: mac,
             ip_address: None,
             hostname: None,
             os_family: Some(req.os.clone()),

@@ -45,10 +45,10 @@ export interface Policy {
 }
 
 export interface AuditLog {
-  id: string
+  id: string | number
   event_type: string
-  mac_address: string | null
-  details: Record<string, unknown>
+  endpoint_id: string | null
+  detail: Record<string, unknown> | null
   created_at: string
 }
 

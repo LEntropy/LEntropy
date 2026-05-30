@@ -65,8 +65,8 @@ export function Dashboard() {
                   </span>
                   <span className="text-gray-700">
                     <span className="font-medium">{log.event_type}</span>
-                    {log.mac_address && (
-                      <span className="text-gray-400 ml-1">— {log.mac_address}</span>
+                    {log.endpoint_id && (
+                      <span className="text-gray-400 ml-1 font-mono text-xs">— {log.endpoint_id.slice(0, 8)}</span>
                     )}
                   </span>
                 </li>

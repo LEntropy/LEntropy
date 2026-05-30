@@ -45,6 +45,7 @@ impl AgentService for AgentServiceImpl {
         &self,
         request: Request<RegisterRequest>,
     ) -> Result<Response<RegisterResponse>, Status> {
+        let remote_ip = request.remote_addr().map(|a| a.ip().to_string());
         let req = request.into_inner();
         debug!(device_id = %req.device_id, os = %req.os, "agent register");
 
@@ -52,7 +53,7 @@ impl AgentService for AgentServiceImpl {
         let repo = EndpointRepo::new(&self.pool);
         let ep = UpsertEndpoint {
             mac_address: mac,
-            ip_address: None,
+            ip_address: remote_ip,
             hostname: None,
             os_family: Some(req.os.clone()),
             os_version: Some(req.version.clone()),
@@ -132,8 +133,20 @@ impl AgentService for AgentServiceImpl {
                 Status::internal("nats error")
             })?;
 
+        // 단말 상태에 따라 액션 결정
+        let mac = device_id_to_mac(&req.device_id);
+        let repo = EndpointRepo::new(&self.pool);
+        let action = match repo.find_by_mac(&mac).await {
+            Ok(Some(ep)) => match ep.status.as_str() {
+                "denied" => "Deny",
+                "quarantined" => "Quarantine",
+                _ => "Allow",
+            },
+            _ => "Allow",
+        };
+
         Ok(Response::new(StatusAck {
-            action: "ok".to_string(),
+            action: action.to_string(),
         }))
     }
 

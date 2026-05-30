@@ -37,11 +37,11 @@ export function AuditLog() {
                   </td>
                   <td className="px-4 py-3 font-medium text-gray-800">{log.event_type}</td>
                   <td className="px-4 py-3 font-mono text-xs text-gray-600">
-                    {log.mac_address ?? '—'}
+                    {log.endpoint_id ? log.endpoint_id.slice(0, 8) + '…' : '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-500 text-xs">
                     <code className="bg-gray-100 px-1.5 py-0.5 rounded">
-                      {JSON.stringify(log.details)}
+                      {JSON.stringify(log.detail ?? {})}
                     </code>
                   </td>
                 </tr>

@@ -12,15 +12,29 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /build
 
-# Cargo 의존성 캐시 레이어
+# Cargo 워크스페이스 메타데이터 (모든 멤버의 Cargo.toml 필요)
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates/ crates/
 COPY proto/ proto/
-COPY services/${SERVICE_NAME}/Cargo.toml services/${SERVICE_NAME}/
+
+# 워크스페이스 모든 서비스의 Cargo.toml 복사 (워크스페이스 해석에 필요)
+COPY services/policy-manager/Cargo.toml  services/policy-manager/
+COPY services/sensor/Cargo.toml          services/sensor/
+COPY services/enforcement/Cargo.toml     services/enforcement/
+COPY services/aaa/Cargo.toml             services/aaa/
+COPY services/dhcp/Cargo.toml            services/dhcp/
+COPY services/agent-gateway/Cargo.toml   services/agent-gateway/
+COPY services/api-gateway/Cargo.toml     services/api-gateway/
+COPY services/endpoint-agent/Cargo.toml  services/endpoint-agent/
+COPY test/integration/Cargo.toml         test/integration/
 
 # 더미 main으로 의존성만 빌드 (캐시 최적화)
-RUN mkdir -p services/${SERVICE_NAME}/src && \
-    echo 'fn main() {}' > services/${SERVICE_NAME}/src/main.rs && \
+RUN for svc in policy-manager sensor enforcement aaa dhcp agent-gateway api-gateway endpoint-agent; do \
+        mkdir -p services/$svc/src && \
+        echo 'fn main() {}' > services/$svc/src/main.rs; \
+    done && \
+    mkdir -p test/integration/src && \
+    echo 'fn main() {}' > test/integration/src/main.rs && \
     cargo build --release -p ${SERVICE_NAME} 2>/dev/null || true
 
 # 실제 소스 복사 및 빌드

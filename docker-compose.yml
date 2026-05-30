@@ -109,6 +109,7 @@ services:
       args:
         SERVICE_NAME: api-gateway
     environment:
+      DATABASE_URL: postgres://nac:nac_dev_password@postgres:5432/nac
       LISTEN_ADDR: "0.0.0.0:8000"
       POLICY_MANAGER_URL: http://policy-manager:8001
       NATS_URL: nats://nats:4222

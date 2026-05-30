@@ -59,6 +59,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       nats:
         condition: service_healthy
 
@@ -70,6 +72,7 @@ services:
         SERVICE_NAME: aaa
     environment:
       DATABASE_URL: postgres://nac:nac_dev_password@postgres:5432/nac
+      REDIS_URL: redis://redis:6379
       NATS_URL: nats://nats:4222
       CAPTIVE_PORTAL_ADDR: "0.0.0.0:8080"
       RADIUS_AUTH_ADDR: "0.0.0.0:1812"
@@ -80,6 +83,8 @@ services:
       - "1813:1813/udp"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       nats:
         condition: service_healthy
@@ -92,12 +97,15 @@ services:
         SERVICE_NAME: agent-gateway
     environment:
       DATABASE_URL: postgres://nac:nac_dev_password@postgres:5432/nac
+      REDIS_URL: redis://redis:6379
       NATS_URL: nats://nats:4222
       GRPC_ADDR: "0.0.0.0:50051"
     ports:
       - "50051:50051"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       nats:
         condition: service_healthy
@@ -110,13 +118,17 @@ services:
         SERVICE_NAME: api-gateway
     environment:
       DATABASE_URL: postgres://nac:nac_dev_password@postgres:5432/nac
+      REDIS_URL: redis://redis:6379
       LISTEN_ADDR: "0.0.0.0:8000"
       POLICY_MANAGER_URL: http://policy-manager:8001
       NATS_URL: nats://nats:4222
     ports:
       - "8000:8000"
     depends_on:
-      - policy-manager
+      redis:
+        condition: service_healthy
+      policy-manager:
+        condition: service_started
 
   admin-console:
     build:
@@ -125,7 +137,8 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - api-gateway
+      api-gateway:
+        condition: service_started
 
 volumes:
   postgres_data:

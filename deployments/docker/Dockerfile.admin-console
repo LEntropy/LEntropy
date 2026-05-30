@@ -19,7 +19,7 @@ RUN printf 'server {\n\
     root /usr/share/nginx/html;\n\
     index index.html;\n\
     location /api/ {\n\
-        proxy_pass http://api-gateway:8000/;\n\
+        proxy_pass http://api-gateway:8000;\n\
     }\n\
     location / {\n\
         try_files $uri $uri/ /index.html;\n\

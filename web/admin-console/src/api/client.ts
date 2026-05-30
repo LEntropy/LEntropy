@@ -60,9 +60,17 @@ export interface DashboardStats {
   recent_events: number
 }
 
+interface PagedResponse<T> {
+  total: number
+  limit: number
+  offset: number
+  items: T[]
+}
+
 // API 함수
 export const endpointsApi = {
-  list: () => api.get<Endpoint[]>('/endpoints'),
+  list: () =>
+    api.get<PagedResponse<Endpoint>>('/endpoints').then((r) => ({ ...r, data: r.data.items })),
   get: (id: string) => api.get<Endpoint>(`/endpoints/${id}`),
   block: (id: string) => api.post(`/endpoints/${id}/block`),
   allow: (id: string) => api.post(`/endpoints/${id}/allow`),
@@ -77,7 +85,10 @@ export const policiesApi = {
 }
 
 export const auditApi = {
-  list: (limit = 50) => api.get<AuditLog[]>(`/audit?limit=${limit}`),
+  list: (limit = 50) =>
+    api
+      .get<PagedResponse<AuditLog>>(`/audit?limit=${limit}`)
+      .then((r) => ({ ...r, data: r.data.items })),
 }
 
 export const statsApi = {

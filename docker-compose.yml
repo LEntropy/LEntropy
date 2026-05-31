@@ -130,6 +130,28 @@ services:
       policy-manager:
         condition: service_started
 
+  enforcement:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.rust-service
+      args:
+        SERVICE_NAME: enforcement
+    # 호스트 네트워크 모드: iptables와 ARP 스푸핑이 실제 호스트 인터페이스에 적용됨
+    network_mode: host
+    environment:
+      # host 네트워크이므로 localhost로 직접 접근
+      DATABASE_URL: postgres://nac:nac_dev_password@localhost:5432/nac
+      REDIS_URL: redis://localhost:6379
+      NATS_URL: nats://localhost:4222
+      LISTEN_ADDR: "0.0.0.0:9999"  # enforcement는 HTTP 없음 (dummy)
+      RUST_LOG: "info"
+    cap_add:
+      - NET_ADMIN   # iptables 조작
+      - NET_RAW     # raw socket (ARP spoofing)
+    depends_on:
+      nats:
+        condition: service_healthy
+
   admin-console:
     build:
       context: .

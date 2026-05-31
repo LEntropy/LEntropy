@@ -4,6 +4,22 @@ use sqlx::PgPool;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostureSoftwareItem {
+    pub name: String,
+    pub version: String,
+}
+
+/// posture 비정규화 업데이트용 파라미터 구조체
+pub struct PostureFields<'a> {
+    pub sw: &'a serde_json::Value,
+    pub missing_patches: i32,
+    pub usb_enabled: bool,
+    pub bluetooth: bool,
+    pub folder_sharing: bool,
+    pub os_version: &'a str,
+}
+
 /// DB에서 읽어온 단말 레코드
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct EndpointRow {
@@ -26,6 +42,13 @@ pub struct EndpointRow {
     pub last_posture_check: Option<OffsetDateTime>,
     pub assigned_policy_id: Option<Uuid>,
     pub policy_exempt: bool,
+    // 비정규화된 posture 필드 — 정책 조건 매칭에 사용
+    pub posture_sw: Option<serde_json::Value>,
+    pub posture_missing_patches: i32,
+    pub posture_usb_enabled: Option<bool>,
+    pub posture_bluetooth: Option<bool>,
+    pub posture_folder_sharing: Option<bool>,
+    pub posture_os_version: Option<String>,
 }
 
 /// 단말 신규 등록 / 업서트용 파라미터
@@ -51,7 +74,9 @@ const SELECT_COLS: &str = r#"
     hostname, os_family, os_version, device_type, vendor,
     vlan_id, switch_port, interface, username, status,
     first_seen, last_seen, is_compliant, last_posture_check,
-    assigned_policy_id, policy_exempt
+    assigned_policy_id, policy_exempt,
+    posture_sw, COALESCE(posture_missing_patches, 0) AS posture_missing_patches,
+    posture_usb_enabled, posture_bluetooth, posture_folder_sharing, posture_os_version
 "#;
 
 impl<'a> EndpointRepo<'a> {
@@ -81,7 +106,9 @@ impl<'a> EndpointRepo<'a> {
                 hostname, os_family, os_version, device_type, vendor,
                 vlan_id, switch_port, interface, username, status,
                 first_seen, last_seen, is_compliant, last_posture_check,
-                assigned_policy_id, policy_exempt
+                assigned_policy_id, policy_exempt,
+                posture_sw, COALESCE(posture_missing_patches, 0) AS posture_missing_patches,
+                posture_usb_enabled, posture_bluetooth, posture_folder_sharing, posture_os_version
             "#,
         )
         .bind(&ep.mac_address)
@@ -181,6 +208,26 @@ impl<'a> EndpointRepo<'a> {
             "UPDATE endpoints SET is_compliant = $1, last_posture_check = NOW() WHERE id = $2",
         )
         .bind(is_compliant)
+        .bind(id)
+        .execute(self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// posture 비정규화 필드 업데이트 (정책 조건 매칭용)
+    pub async fn update_posture_fields(&self, id: Uuid, f: &PostureFields<'_>) -> Result<()> {
+        sqlx::query(
+            "UPDATE endpoints SET \
+             posture_sw = $1, posture_missing_patches = $2, posture_usb_enabled = $3, \
+             posture_bluetooth = $4, posture_folder_sharing = $5, posture_os_version = $6 \
+             WHERE id = $7",
+        )
+        .bind(f.sw)
+        .bind(f.missing_patches)
+        .bind(f.usb_enabled)
+        .bind(f.bluetooth)
+        .bind(f.folder_sharing)
+        .bind(f.os_version)
         .bind(id)
         .execute(self.pool)
         .await?;

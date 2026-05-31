@@ -3,7 +3,7 @@ use async_nats::Client;
 use futures_util::StreamExt;
 use nac_policy_engine::evaluator;
 use nac_store::audit::AuditRepo;
-use nac_store::endpoint::EndpointRepo;
+use nac_store::endpoint::{EndpointRepo, PostureFields};
 use nac_store::policy::{decision_to_status, PolicyRepo};
 use nac_store::posture::{CompliancePolicy, PostureRepo, PostureReport};
 use serde_json::json;
@@ -58,9 +58,24 @@ async fn process_posture(nats: &Client, pool: &PgPool, report: PostureReport) ->
         .save(endpoint.id, &report, is_compliant)
         .await?;
 
-    // 4. endpoint is_compliant 업데이트
+    // 4. endpoint is_compliant + posture 비정규화 필드 업데이트
     endpoint_repo
         .set_compliance(endpoint.id, is_compliant)
+        .await?;
+
+    let sw_json = serde_json::to_value(&report.installed_software).unwrap_or_default();
+    endpoint_repo
+        .update_posture_fields(
+            endpoint.id,
+            &PostureFields {
+                sw: &sw_json,
+                missing_patches: report.missing_patches.len() as i32,
+                usb_enabled: report.usb_enabled,
+                bluetooth: report.bluetooth_enabled,
+                folder_sharing: report.folder_sharing_enabled,
+                os_version: &report.os_version,
+            },
+        )
         .await?;
 
     // 5. audit log

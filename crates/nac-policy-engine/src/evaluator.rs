@@ -37,6 +37,19 @@ pub fn matches_condition(condition: &Condition, ctx: &PolicyContext) -> bool {
         Condition::MacList { macs } => macs
             .iter()
             .any(|m| m.to_uppercase() == ctx.mac_address.to_uppercase()),
+        Condition::MacBlacklist { macs } => macs
+            .iter()
+            .any(|m| m.to_uppercase() == ctx.mac_address.to_uppercase()),
+        // 아래 조건들은 posture 데이터가 필요하며 evaluate.rs의 condition_matches에서 처리됨
+        // PolicyContext에는 posture 데이터가 없으므로 여기서는 false 반환
+        Condition::OsVersionBelow { .. }
+        | Condition::OsVersionAtLeast { .. }
+        | Condition::SoftwareInstalled { .. }
+        | Condition::SoftwareNotInstalled { .. }
+        | Condition::HasMissingPatches
+        | Condition::UsbEnabled
+        | Condition::BluetoothEnabled
+        | Condition::FolderSharingEnabled => false,
     }
 }
 

@@ -1,6 +1,6 @@
 use axum::{extract::State, Json};
 use nac_policy_engine::rule::Condition;
-use nac_store::endpoint::EndpointRow;
+use nac_store::endpoint::{EndpointRow, PostureSoftwareItem};
 use nac_store::{
     endpoint::EndpointRepo,
     policy::{decision_to_status, PolicyRepo},
@@ -121,6 +121,59 @@ fn condition_matches(condition: &Condition, ep: &EndpointRow) -> bool {
             .unwrap_or(false),
         Condition::Compliant { required } => ep.is_compliant.unwrap_or(false) == *required,
         Condition::MacList { macs } => macs.iter().any(|m| m.eq_ignore_ascii_case(&ep.mac_address)),
+        Condition::MacBlacklist { macs } => {
+            macs.iter().any(|m| m.eq_ignore_ascii_case(&ep.mac_address))
+        }
         Condition::UserGroup { .. } => false,
+        Condition::OsVersionBelow { version } => {
+            let ep_ver = ep
+                .posture_os_version
+                .as_deref()
+                .or(ep.os_version.as_deref())
+                .unwrap_or("");
+            compare_os_version(ep_ver, version) == std::cmp::Ordering::Less
+        }
+        Condition::OsVersionAtLeast { version } => {
+            let ep_ver = ep
+                .posture_os_version
+                .as_deref()
+                .or(ep.os_version.as_deref())
+                .unwrap_or("");
+            compare_os_version(ep_ver, version) != std::cmp::Ordering::Less
+        }
+        Condition::SoftwareInstalled { name } => installed_software_list(ep)
+            .iter()
+            .any(|s| s.name.to_lowercase().contains(&name.to_lowercase())),
+        Condition::SoftwareNotInstalled { name } => !installed_software_list(ep)
+            .iter()
+            .any(|s| s.name.to_lowercase().contains(&name.to_lowercase())),
+        Condition::HasMissingPatches => ep.posture_missing_patches > 0,
+        Condition::UsbEnabled => ep.posture_usb_enabled.unwrap_or(false),
+        Condition::BluetoothEnabled => ep.posture_bluetooth.unwrap_or(false),
+        Condition::FolderSharingEnabled => ep.posture_folder_sharing.unwrap_or(false),
     }
+}
+
+/// "10.0.19041.1" 형태의 버전 문자열을 숫자 배열로 파싱해 비교
+fn compare_os_version(a: &str, b: &str) -> std::cmp::Ordering {
+    let parse = |s: &str| -> Vec<u64> { s.split('.').filter_map(|p| p.parse().ok()).collect() };
+    let va = parse(a);
+    let vb = parse(b);
+    let len = va.len().max(vb.len());
+    for i in 0..len {
+        let x = va.get(i).copied().unwrap_or(0);
+        let y = vb.get(i).copied().unwrap_or(0);
+        match x.cmp(&y) {
+            std::cmp::Ordering::Equal => continue,
+            other => return other,
+        }
+    }
+    std::cmp::Ordering::Equal
+}
+
+fn installed_software_list(ep: &EndpointRow) -> Vec<PostureSoftwareItem> {
+    ep.posture_sw
+        .as_ref()
+        .and_then(|v| serde_json::from_value::<Vec<PostureSoftwareItem>>(v.clone()).ok())
+        .unwrap_or_default()
 }

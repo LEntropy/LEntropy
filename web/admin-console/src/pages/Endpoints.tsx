@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
 import { endpointsApi, policiesApi, type Endpoint, type Policy, type AuditLog } from '../api/client'
 import { StatusBadge } from '../components/StatusBadge'
-import { Search, FileText, ShieldOff, X } from 'lucide-react'
+import { Search, FileText, ShieldOff, X, Ban } from 'lucide-react'
 
 // ── 이벤트 로그 모달 ─────────────────────────────────────────────────────────
 function LogModal({ endpoint, onClose }: { endpoint: Endpoint; onClose: () => void }) {
@@ -129,6 +130,7 @@ function PolicySelect({
 
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 export function Endpoints() {
+  const navigate = useNavigate()
   const { data: endpoints, loading, reload } = useApi<Endpoint[]>(endpointsApi.list)
   const { data: policies } = useApi<Policy[]>(policiesApi.list)
   const [search, setSearch] = useState('')
@@ -163,6 +165,45 @@ export function Endpoints() {
       await reload()
     },
     [reload],
+  )
+
+  const handleAddToBlacklist = useCallback(
+    async (ep: Endpoint) => {
+      const allPolicies = policies ?? []
+      const blacklistPolicy = allPolicies.find((p) =>
+        (p.conditions as unknown[]).some(
+          (c) => (c as { type: string }).type === 'mac_blacklist',
+        ),
+      )
+
+      if (!blacklistPolicy) {
+        if (confirm(`블랙리스트 정책이 없습니다. "${ep.mac_address}"를 블랙리스트 페이지에서 추가하시겠습니까?`)) {
+          navigate('/blacklist')
+        }
+        return
+      }
+
+      const existing = (blacklistPolicy.conditions as unknown[]).find(
+        (c) => (c as { type: string }).type === 'mac_blacklist',
+      ) as { type: string; macs: string[] } | undefined
+
+      if (existing?.macs.some((m: string) => m.toLowerCase() === ep.mac_address.toLowerCase())) {
+        alert('이미 블랙리스트에 등록된 단말입니다.')
+        return
+      }
+
+      const newConditions = (blacklistPolicy.conditions as unknown[]).map((c) => {
+        const cond = c as { type: string; macs: string[] }
+        if (cond.type === 'mac_blacklist') {
+          return { ...cond, macs: [...cond.macs, ep.mac_address] }
+        }
+        return cond
+      })
+
+      await policiesApi.update(blacklistPolicy.id, { conditions: newConditions })
+      alert(`${ep.mac_address}이 블랙리스트에 추가되었습니다. 정책 평가를 실행하세요.`)
+    },
+    [policies, navigate],
   )
 
   const handleToggleExempt = async (ep: Endpoint) => {
@@ -341,6 +382,13 @@ export function Endpoints() {
                           disabled={!!actionLoading || ep.status === 'denied'}
                           variant="danger"
                         />
+                        <button
+                          onClick={() => handleAddToBlacklist(ep)}
+                          title="블랙리스트에 추가"
+                          className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        >
+                          <Ban className="h-3.5 w-3.5" />
+                        </button>
                         <button
                           onClick={() => setLogEndpoint(ep)}
                           title="이벤트 로그 보기"

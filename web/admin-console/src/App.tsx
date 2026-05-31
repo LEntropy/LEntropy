@@ -3,6 +3,7 @@ import { Layout } from './components/Layout'
 import { Dashboard } from './pages/Dashboard'
 import { Endpoints } from './pages/Endpoints'
 import { Policies } from './pages/Policies'
+import { Blacklist } from './pages/Blacklist'
 import { AuditLog } from './pages/AuditLog'
 import { Login } from './pages/Login'
 
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/endpoints" element={<Endpoints />} />
           <Route path="/policies" element={<Policies />} />
+          <Route path="/blacklist" element={<Blacklist />} />
           <Route path="/audit" element={<AuditLog />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

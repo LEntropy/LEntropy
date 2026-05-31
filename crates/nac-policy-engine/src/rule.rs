@@ -23,6 +23,24 @@ pub enum Condition {
     Not { condition: Box<Condition> },
     /// MAC 주소 allowlist — 등록 단말 자동 허용(MAC bypass)에 사용
     MacList { macs: Vec<String> },
+    /// OS 버전이 지정 버전보다 낮으면 매칭 (Windows: 빌드 번호 기준)
+    OsVersionBelow { version: String },
+    /// OS 버전이 지정 버전 이상이면 매칭
+    OsVersionAtLeast { version: String },
+    /// 특정 소프트웨어가 설치되어 있으면 매칭
+    SoftwareInstalled { name: String },
+    /// 특정 소프트웨어가 설치되어 있지 않으면 매칭
+    SoftwareNotInstalled { name: String },
+    /// 누락된 패치가 하나라도 있으면 매칭
+    HasMissingPatches,
+    /// USB 저장소가 활성화된 경우 매칭
+    UsbEnabled,
+    /// 블루투스가 활성화된 경우 매칭
+    BluetoothEnabled,
+    /// 폴더 공유가 활성화된 경우 매칭
+    FolderSharingEnabled,
+    /// MAC 주소 목록 — 블랙리스트 차단에 사용
+    MacBlacklist { macs: Vec<String> },
 }
 
 /// A named policy rule with priority, conditions, and a resulting decision.

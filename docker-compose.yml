@@ -145,8 +145,9 @@ services:
       NATS_URL: nats://localhost:4222
       LISTEN_ADDR: "0.0.0.0:9999"  # enforcement는 HTTP 없음 (dummy)
       RUST_LOG: "info"
+    user: root  # nft/iptables 조작 필요
     cap_add:
-      - NET_ADMIN   # iptables 조작
+      - NET_ADMIN   # nft/iptables 조작
       - NET_RAW     # raw socket (ARP spoofing)
     depends_on:
       nats:

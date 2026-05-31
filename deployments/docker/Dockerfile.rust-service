@@ -51,10 +51,13 @@ ARG SERVICE_NAME
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
+    nftables \
+    iptables \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -r -s /bin/false nac
-USER nac
+# enforcement는 root 권한 필요 (nft/iptables 조작)
+# USER nac  ← 서비스별로 docker-compose에서 user 지정
 
 COPY --from=builder /build/target/release/${SERVICE_NAME} /usr/local/bin/service
 

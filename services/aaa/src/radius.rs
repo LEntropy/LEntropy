@@ -1,7 +1,9 @@
 //! RADIUS 서버 (RFC 2865/2866 기반 UDP 1812/1813).
-//! 지원: PAP, EAP-MD5 (PEAP/EAP-TLS는 구조 정의 포함)
+//! NAC 연동: MAC 주소 기반 인증(MAB) + VLAN 할당 응답
 
 use anyhow::Result;
+use nac_store::{audit::AuditRepo, endpoint::EndpointRepo};
+use sqlx::PgPool;
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
 use tracing::{debug, info, warn};
@@ -19,7 +21,12 @@ pub const ATTR_USER_PASSWORD: u8 = 2;
 pub const ATTR_NAS_IP: u8 = 4;
 pub const ATTR_NAS_PORT: u8 = 5;
 pub const ATTR_REPLY_MESSAGE: u8 = 18;
+pub const ATTR_CALLING_STATION_ID: u8 = 31; // MAC 주소 (스위치가 전달)
 pub const ATTR_EAP_MESSAGE: u8 = 79;
+// VLAN 할당용 Tunnel 속성 (RFC 2868)
+pub const ATTR_TUNNEL_TYPE: u8 = 64; // 13 = VLAN
+pub const ATTR_TUNNEL_MEDIUM_TYPE: u8 = 65; // 6 = 802
+pub const ATTR_TUNNEL_PRIVATE_GROUP_ID: u8 = 81; // VLAN ID 문자열
 
 /// RADIUS 패킷 구조
 #[derive(Debug, Clone)]
@@ -88,6 +95,19 @@ impl RadiusPacket {
         buf
     }
 
+    /// RFC 2865 §3: Response Authenticator 계산
+    /// MD5(Code + ID + Length + RequestAuth + Attributes + Secret)
+    pub fn encode_with_response_auth(&self, request_auth: &[u8; 16], secret: &[u8]) -> Vec<u8> {
+        let mut buf = self.encode();
+        // 응답 패킷의 authenticator 자리를 임시로 request_auth로 채운 상태에서 MD5 계산
+        buf[4..20].copy_from_slice(request_auth);
+        let mut input = buf.clone();
+        input.extend_from_slice(secret);
+        let hash = md5::compute(&input);
+        buf[4..20].copy_from_slice(&hash.0);
+        buf
+    }
+
     pub fn get_attr(&self, attr_type: u8) -> Option<&[u8]> {
         self.attributes
             .iter()
@@ -108,141 +128,272 @@ fn decrypt_pap_password(encrypted: &[u8], secret: &[u8], authenticator: &[u8; 16
         prev = chunk.to_vec();
         result.extend_from_slice(&decrypted);
     }
-    // 제로 패딩 제거
     while result.last() == Some(&0) {
         result.pop();
     }
     result
 }
 
-/// 인증 콜백 트레이트
-pub trait AuthBackend: Send + Sync + 'static {
-    fn authenticate(&self, username: &str, password: &str) -> bool;
-}
-
-/// 단순 정적 시크릿 인증 (테스트용)
-pub struct StaticAuth {
-    pub users: std::collections::HashMap<String, String>,
-}
-
-impl AuthBackend for StaticAuth {
-    fn authenticate(&self, username: &str, password: &str) -> bool {
-        self.users
-            .get(username)
-            .map(|p| p == password)
-            .unwrap_or(false)
+/// MAC 주소 정규화: 구분자를 모두 제거하고 소문자로 변환 후 xx:xx:xx:xx:xx:xx 형식으로
+fn normalize_mac(raw: &str) -> Option<String> {
+    let hex: String = raw
+        .chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .collect::<String>()
+        .to_lowercase();
+    if hex.len() == 12 {
+        Some(format!(
+            "{}:{}:{}:{}:{}:{}",
+            &hex[0..2],
+            &hex[2..4],
+            &hex[4..6],
+            &hex[6..8],
+            &hex[8..10],
+            &hex[10..12]
+        ))
+    } else {
+        None
     }
 }
 
-/// RADIUS 서버 상태
-pub struct RadiusServer<A: AuthBackend> {
-    pub shared_secret: Vec<u8>,
-    pub auth: A,
+/// VLAN Tunnel 속성 생성 (RFC 2868)
+fn vlan_attributes(vlan_id: u16) -> Vec<RadiusAttribute> {
+    // Tunnel-Type = 13 (VLAN), Tag=0x00
+    let mut tunnel_type = vec![0x00u8]; // tag
+    tunnel_type.extend_from_slice(&13u32.to_be_bytes());
+
+    // Tunnel-Medium-Type = 6 (802), Tag=0x00
+    let mut medium_type = vec![0x00u8];
+    medium_type.extend_from_slice(&6u32.to_be_bytes());
+
+    // Tunnel-Private-Group-ID = VLAN ID as string, Tag=0x00
+    let mut group_id = vec![0x00u8];
+    group_id.extend_from_slice(vlan_id.to_string().as_bytes());
+
+    vec![
+        RadiusAttribute {
+            attr_type: ATTR_TUNNEL_TYPE,
+            value: tunnel_type,
+        },
+        RadiusAttribute {
+            attr_type: ATTR_TUNNEL_MEDIUM_TYPE,
+            value: medium_type,
+        },
+        RadiusAttribute {
+            attr_type: ATTR_TUNNEL_PRIVATE_GROUP_ID,
+            value: group_id,
+        },
+    ]
 }
 
-impl<A: AuthBackend> RadiusServer<A> {
-    pub fn new(secret: impl Into<Vec<u8>>, auth: A) -> Self {
-        Self {
-            shared_secret: secret.into(),
-            auth,
+/// RADIUS 인증 처리: DB에서 MAC 조회 후 정책 결정
+async fn handle_access_request(
+    pkt: &RadiusPacket,
+    secret: &[u8],
+    pool: &PgPool,
+    nats: &async_nats::Client,
+) -> RadiusPacket {
+    let repo = EndpointRepo::new(pool);
+    let audit = AuditRepo::new(pool);
+
+    // 1. MAC 추출: Calling-Station-Id 우선, 없으면 User-Name (MAB)
+    let mac_raw = pkt
+        .get_attr(ATTR_CALLING_STATION_ID)
+        .and_then(|b| std::str::from_utf8(b).ok())
+        .or_else(|| {
+            pkt.get_attr(ATTR_USER_NAME)
+                .and_then(|b| std::str::from_utf8(b).ok())
+        })
+        .unwrap_or("");
+
+    let mac = match normalize_mac(mac_raw) {
+        Some(m) => m,
+        None => {
+            // PAP 사용자명/비밀번호 인증 (관리 계정용 폴백)
+            let username = pkt
+                .get_attr(ATTR_USER_NAME)
+                .and_then(|b| std::str::from_utf8(b).ok())
+                .unwrap_or("");
+            let authenticated = if let Some(enc_pw) = pkt.get_attr(ATTR_USER_PASSWORD) {
+                let pw = decrypt_pap_password(enc_pw, secret, &pkt.authenticator);
+                let admin_pass =
+                    std::env::var("RADIUS_ADMIN_PASS").unwrap_or_else(|_| "changeme".into());
+                let admin_user =
+                    std::env::var("RADIUS_ADMIN_USER").unwrap_or_else(|_| "admin".into());
+                let pw_str = String::from_utf8_lossy(&pw);
+                username == admin_user && pw_str == admin_pass
+            } else {
+                false
+            };
+            warn!(username, mac_raw, "non-MAC RADIUS request — PAP fallback");
+            return build_response(pkt, authenticated, None, "PAP authentication");
+        }
+    };
+
+    // 2. DB에서 단말 조회
+    let endpoint = match repo.find_by_mac(&mac).await {
+        Ok(Some(ep)) => ep,
+        Ok(None) => {
+            // 미등록 단말: 거부 (격리 VLAN으로 보낼 수도 있음)
+            let quarantine_vlan: Option<u16> = std::env::var("RADIUS_UNKNOWN_VLAN")
+                .ok()
+                .and_then(|v| v.parse().ok());
+            info!(mac, "unknown endpoint — rejecting");
+            let _ = audit
+                .log(
+                    "radius_unknown_endpoint",
+                    None,
+                    "radius",
+                    serde_json::json!({ "mac": mac }),
+                )
+                .await;
+            return build_response(pkt, false, quarantine_vlan, "Unknown endpoint");
+        }
+        Err(e) => {
+            warn!(error = %e, mac, "DB error looking up endpoint");
+            return build_response(pkt, false, None, "Internal error");
+        }
+    };
+
+    // 3. 상태 기반 결정
+    let (accept, vlan, msg) = match endpoint.status.as_str() {
+        "allowed" => {
+            // 허용 VLAN (기본값 없음 = 스위치의 기본 VLAN 사용)
+            let vlan: Option<u16> = std::env::var("RADIUS_ALLOW_VLAN")
+                .ok()
+                .and_then(|v| v.parse().ok());
+            (true, vlan, "Access granted")
+        }
+        "quarantined" => {
+            // 격리 VLAN으로 수용
+            let vlan: u16 = std::env::var("RADIUS_QUARANTINE_VLAN")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(99);
+            (true, Some(vlan), "Quarantine VLAN assigned")
+        }
+        _ => (false, None, "Access denied"),
+    };
+
+    info!(
+        mac,
+        status = endpoint.status,
+        accept,
+        vlan,
+        "RADIUS authentication result"
+    );
+
+    // 4. 감사 로그
+    let _ = audit
+        .log(
+            if accept {
+                "radius_auth_success"
+            } else {
+                "radius_auth_failure"
+            },
+            Some(endpoint.id),
+            "radius",
+            serde_json::json!({
+                "mac": mac,
+                "status": endpoint.status,
+                "vlan": vlan,
+                "accept": accept,
+            }),
+        )
+        .await;
+
+    // 5. NATS 이벤트 발행
+    let event = serde_json::json!({
+        "mac_address": mac,
+        "endpoint_id": endpoint.id,
+        "success": accept,
+        "vlan": vlan,
+    });
+    if let Ok(payload) = serde_json::to_vec(&event) {
+        nats.publish("nac.events.radius.auth", payload.into())
+            .await
+            .ok();
+    }
+
+    build_response(pkt, accept, vlan, msg)
+}
+
+fn build_response(
+    req: &RadiusPacket,
+    accept: bool,
+    vlan: Option<u16>,
+    message: &str,
+) -> RadiusPacket {
+    let code = if accept {
+        CODE_ACCESS_ACCEPT
+    } else {
+        CODE_ACCESS_REJECT
+    };
+
+    let mut attributes = vec![RadiusAttribute {
+        attr_type: ATTR_REPLY_MESSAGE,
+        value: message.as_bytes().to_vec(),
+    }];
+
+    if accept {
+        if let Some(v) = vlan {
+            attributes.extend(vlan_attributes(v));
         }
     }
 
-    fn handle_access_request(&self, pkt: &RadiusPacket) -> RadiusPacket {
-        let username = pkt
-            .get_attr(ATTR_USER_NAME)
-            .and_then(|b| std::str::from_utf8(b).ok())
-            .unwrap_or("");
-
-        // PAP 인증 시도
-        let authenticated = if let Some(enc_pw) = pkt.get_attr(ATTR_USER_PASSWORD) {
-            let password = decrypt_pap_password(enc_pw, &self.shared_secret, &pkt.authenticator);
-            let pass_str = String::from_utf8_lossy(&password);
-            debug!(username, "PAP authentication attempt");
-            self.auth.authenticate(username, &pass_str)
-        } else if pkt.get_attr(ATTR_EAP_MESSAGE).is_some() {
-            // EAP: 현재는 거부 (EAP-TLS/PEAP 확장 포인트)
-            warn!(username, "EAP authentication not fully implemented");
-            false
-        } else {
-            false
-        };
-
-        let code = if authenticated {
-            CODE_ACCESS_ACCEPT
-        } else {
-            CODE_ACCESS_REJECT
-        };
-        let msg = if authenticated {
-            "Access granted"
-        } else {
-            "Access denied"
-        };
-
-        info!(username, authenticated, "RADIUS authentication result");
-
-        RadiusPacket {
-            code,
-            identifier: pkt.identifier,
-            authenticator: pkt.authenticator,
-            attributes: vec![RadiusAttribute {
-                attr_type: ATTR_REPLY_MESSAGE,
-                value: msg.as_bytes().to_vec(),
-            }],
-        }
-    }
-
-    fn handle_accounting_request(&self, pkt: &RadiusPacket) -> RadiusPacket {
-        let username = pkt
-            .get_attr(ATTR_USER_NAME)
-            .and_then(|b| std::str::from_utf8(b).ok())
-            .unwrap_or("<unknown>");
-        info!(username, "RADIUS accounting request received");
-        RadiusPacket {
-            code: CODE_ACCOUNTING_RESPONSE,
-            identifier: pkt.identifier,
-            authenticator: pkt.authenticator,
-            attributes: vec![],
-        }
+    RadiusPacket {
+        code,
+        identifier: req.identifier,
+        authenticator: req.authenticator,
+        attributes,
     }
 }
 
 /// UDP 1812/1813 리스너 실행
-pub async fn run_radius_server(auth_addr: &str, acct_addr: &str, secret: Vec<u8>) -> Result<()> {
+pub async fn run_radius_server(
+    auth_addr: &str,
+    acct_addr: &str,
+    secret: Vec<u8>,
+    pool: PgPool,
+    nats: async_nats::Client,
+) -> Result<()> {
     let auth_socket = UdpSocket::bind(auth_addr).await?;
     let acct_socket = UdpSocket::bind(acct_addr).await?;
     info!(auth_addr, acct_addr, "RADIUS server listening");
 
-    let auth_users = {
-        let mut m = std::collections::HashMap::new();
-        m.insert("testuser".to_string(), "testpass".to_string());
-        m
-    };
-    let server = std::sync::Arc::new(RadiusServer::new(
-        secret.clone(),
-        StaticAuth { users: auth_users },
-    ));
+    let secret = std::sync::Arc::new(secret);
+    let pool = std::sync::Arc::new(pool);
+    let nats = std::sync::Arc::new(nats);
 
-    let auth_server = server.clone();
+    let auth_secret = secret.clone();
+    let auth_pool = pool.clone();
+    let auth_nats = nats.clone();
     let auth_task = tokio::spawn(async move {
         let mut buf = vec![0u8; 4096];
         loop {
             match auth_socket.recv_from(&mut buf).await {
                 Ok((n, peer)) => {
-                    handle_packet(&auth_socket, &buf[..n], peer, &*auth_server).await;
+                    handle_auth_packet(
+                        &auth_socket,
+                        &buf[..n],
+                        peer,
+                        &auth_secret,
+                        &auth_pool,
+                        &auth_nats,
+                    )
+                    .await;
                 }
                 Err(e) => warn!(error = %e, "RADIUS auth recv error"),
             }
         }
     });
 
-    let acct_server = server.clone();
     let acct_task = tokio::spawn(async move {
         let mut buf = vec![0u8; 4096];
         loop {
             match acct_socket.recv_from(&mut buf).await {
                 Ok((n, peer)) => {
-                    handle_packet(&acct_socket, &buf[..n], peer, &*acct_server).await;
+                    handle_acct_packet(&acct_socket, &buf[..n], peer).await;
                 }
                 Err(e) => warn!(error = %e, "RADIUS acct recv error"),
             }
@@ -253,40 +404,71 @@ pub async fn run_radius_server(auth_addr: &str, acct_addr: &str, secret: Vec<u8>
     Ok(())
 }
 
-async fn handle_packet<A: AuthBackend>(
+async fn handle_auth_packet(
     socket: &UdpSocket,
     buf: &[u8],
     peer: SocketAddr,
-    server: &RadiusServer<A>,
+    secret: &[u8],
+    pool: &PgPool,
+    nats: &async_nats::Client,
 ) {
-    match RadiusPacket::parse(buf) {
-        Ok(pkt) => {
-            let response = match pkt.code {
-                CODE_ACCESS_REQUEST => server.handle_access_request(&pkt),
-                CODE_ACCOUNTING_REQUEST => server.handle_accounting_request(&pkt),
-                other => {
-                    warn!(code = other, "Unknown RADIUS code");
-                    return;
-                }
-            };
-            let encoded = response.encode();
-            if let Err(e) = socket.send_to(&encoded, peer).await {
-                warn!(error = %e, "RADIUS send error");
-            }
+    let pkt = match RadiusPacket::parse(buf) {
+        Ok(p) => p,
+        Err(e) => {
+            warn!(error = %e, peer = %peer, "RADIUS parse error");
+            return;
         }
-        Err(e) => warn!(error = %e, peer = %peer, "RADIUS parse error"),
+    };
+
+    debug!(peer = %peer, code = pkt.code, id = pkt.identifier, "RADIUS auth packet");
+
+    if pkt.code != CODE_ACCESS_REQUEST {
+        warn!(code = pkt.code, "unexpected RADIUS code on auth port");
+        return;
+    }
+
+    let request_auth = pkt.authenticator;
+    let response = handle_access_request(&pkt, secret, pool, nats).await;
+    let encoded = response.encode_with_response_auth(&request_auth, secret);
+
+    if let Err(e) = socket.send_to(&encoded, peer).await {
+        warn!(error = %e, "RADIUS auth send error");
+    }
+}
+
+async fn handle_acct_packet(socket: &UdpSocket, buf: &[u8], peer: SocketAddr) {
+    let pkt = match RadiusPacket::parse(buf) {
+        Ok(p) => p,
+        Err(e) => {
+            warn!(error = %e, peer = %peer, "RADIUS acct parse error");
+            return;
+        }
+    };
+
+    debug!(peer = %peer, code = pkt.code, id = pkt.identifier, "RADIUS acct packet");
+
+    if pkt.code == CODE_ACCOUNTING_REQUEST {
+        let username = pkt
+            .get_attr(ATTR_USER_NAME)
+            .and_then(|b| std::str::from_utf8(b).ok())
+            .unwrap_or("<unknown>");
+        info!(username, "RADIUS accounting request received");
+
+        let response = RadiusPacket {
+            code: CODE_ACCOUNTING_RESPONSE,
+            identifier: pkt.identifier,
+            authenticator: pkt.authenticator,
+            attributes: vec![],
+        };
+        if let Err(e) = socket.send_to(&response.encode(), peer).await {
+            warn!(error = %e, "RADIUS acct send error");
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn make_server() -> RadiusServer<StaticAuth> {
-        let mut users = std::collections::HashMap::new();
-        users.insert("alice".to_string(), "secret".to_string());
-        RadiusServer::new(b"sharedsecret".to_vec(), StaticAuth { users })
-    }
 
     fn make_access_request(username: &str) -> RadiusPacket {
         RadiusPacket {
@@ -311,32 +493,44 @@ mod tests {
     }
 
     #[test]
-    fn test_pap_reject_no_password() {
-        let server = make_server();
-        let pkt = make_access_request("alice");
-        let resp = server.handle_access_request(&pkt);
-        assert_eq!(resp.code, CODE_ACCESS_REJECT);
+    fn test_normalize_mac() {
+        assert_eq!(
+            normalize_mac("AA-BB-CC-DD-EE-FF"),
+            Some("aa:bb:cc:dd:ee:ff".to_string())
+        );
+        assert_eq!(
+            normalize_mac("aabbccddeeff"),
+            Some("aa:bb:cc:dd:ee:ff".to_string())
+        );
+        assert_eq!(
+            normalize_mac("AA:BB:CC:DD:EE:FF"),
+            Some("aa:bb:cc:dd:ee:ff".to_string())
+        );
+        assert_eq!(normalize_mac("invalid"), None);
     }
 
     #[test]
-    fn test_accounting_response() {
-        let server = make_server();
-        let pkt = RadiusPacket {
-            code: CODE_ACCOUNTING_REQUEST,
-            identifier: 5,
-            authenticator: [0u8; 16],
-            attributes: vec![RadiusAttribute {
-                attr_type: ATTR_USER_NAME,
-                value: b"bob".to_vec(),
-            }],
-        };
-        let resp = server.handle_accounting_request(&pkt);
-        assert_eq!(resp.code, CODE_ACCOUNTING_RESPONSE);
-        assert_eq!(resp.identifier, 5);
+    fn test_vlan_attributes() {
+        let attrs = vlan_attributes(100);
+        assert_eq!(attrs.len(), 3);
+        assert_eq!(attrs[0].attr_type, ATTR_TUNNEL_TYPE);
+        assert_eq!(attrs[1].attr_type, ATTR_TUNNEL_MEDIUM_TYPE);
+        assert_eq!(attrs[2].attr_type, ATTR_TUNNEL_PRIVATE_GROUP_ID);
     }
 
     #[test]
     fn test_packet_too_short() {
         assert!(RadiusPacket::parse(&[0u8; 5]).is_err());
+    }
+
+    #[test]
+    fn test_response_auth_included() {
+        let pkt = make_access_request("test");
+        let secret = b"sharedsecret";
+        let request_auth = [1u8; 16];
+        let encoded = pkt.encode_with_response_auth(&request_auth, secret);
+        // Response Authenticator (bytes 4..20) should not be all zeros
+        let auth: &[u8] = &encoded[4..20];
+        assert_ne!(auth, &[0u8; 16]);
     }
 }

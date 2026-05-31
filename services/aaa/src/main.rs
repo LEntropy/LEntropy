@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use sqlx::postgres::PgPoolOptions;
 use tracing_subscriber::{fmt, EnvFilter};
 
 mod captive_portal;
@@ -20,6 +21,13 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(service = "aaa", "starting up");
 
     let config = nac_config::AppConfig::load()?;
+
+    // ── DB 연결 ────────────────────────────────────────────────────────────
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&config.database_url)
+        .await?;
+    tracing::info!("database connected");
 
     // ── NATS 연결 ─────────────────────────────────────────────────────────
     let nats = async_nats::connect(&config.nats_url).await?;
@@ -70,12 +78,15 @@ async fn main() -> anyhow::Result<()> {
         .radius_acct_addr
         .clone()
         .unwrap_or_else(|| "0.0.0.0:1813".to_string());
-
+    let radius_pool = pool.clone();
+    let radius_nats = nats.clone();
     tokio::spawn(async move {
         if let Err(e) = radius::run_radius_server(
             &radius_auth_addr,
             &radius_acct_addr,
             radius_secret.into_bytes(),
+            radius_pool,
+            radius_nats,
         )
         .await
         {

@@ -93,9 +93,14 @@ fn execute_command(
     let action = map_action(&cmd.action);
 
     // ── iptables (primary enforcement) ──────────────────────────────────────
+    let ip_opt = if cmd.ip_address.is_empty() || cmd.ip_address == "0.0.0.0" {
+        None
+    } else {
+        Some(cmd.ip_address.as_str())
+    };
     match action {
-        NacAction::Block => ipt.block(&cmd.mac_address)?,
-        NacAction::Quarantine => ipt.quarantine(&cmd.mac_address)?,
+        NacAction::Block => ipt.block(&cmd.mac_address, ip_opt)?,
+        NacAction::Quarantine => ipt.quarantine(&cmd.mac_address, ip_opt)?,
     };
 
     // ── ARP spoofer (Layer-2 secondary) ─────────────────────────────────────
@@ -157,7 +162,7 @@ fn execute_command(
 
     match action {
         NacAction::Block => {
-            spoofer_ref.block(victim_ip, victim_mac)?;
+            spoofer_ref.block(victim_ip, victim_mac, gateway_ip)?;
             info!(mac = %cmd.mac_address, ip = %victim_ip, "ARP block sent");
         }
         NacAction::Quarantine => {
@@ -211,7 +216,12 @@ pub fn execute_allow(
     ipt: &IptablesEnforcer,
     state: &QuarantineState,
 ) -> Result<()> {
-    ipt.allow(&cmd.mac_address)?;
+    let ip_opt = if cmd.ip_address.is_empty() || cmd.ip_address == "0.0.0.0" {
+        None
+    } else {
+        Some(cmd.ip_address.as_str())
+    };
+    ipt.allow(&cmd.mac_address, ip_opt)?;
 
     let entry = state
         .lock()

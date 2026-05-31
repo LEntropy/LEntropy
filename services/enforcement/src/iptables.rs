@@ -25,6 +25,8 @@ use tracing::{debug, info, warn};
 const NFT_TABLE: &str = "nac_filter";
 const SET_BLOCK: &str = "blocked_macs";
 const SET_QUARANTINE: &str = "quarantined_macs";
+const SET_BLOCK_IP: &str = "blocked_ips";
+const SET_QUARANTINE_IP: &str = "quarantined_ips";
 const CAPTIVE_PORT: &str = "8080";
 
 // iptables-legacy 용 체인 이름
@@ -69,13 +71,18 @@ impl IptablesEnforcer {
     }
 
     /// 단말 완전 차단 (denied)
-    pub fn block(&self, mac: &str) -> Result<()> {
+    pub fn block(&self, mac: &str, ip: Option<&str>) -> Result<()> {
         match self.backend {
             Backend::Nft => {
                 let m = nft_mac(mac);
-                nft_del_elem(SET_QUARANTINE, &m).ok(); // quarantine에서 제거
+                nft_del_elem(SET_QUARANTINE, &m).ok();
                 nft_add_elem(SET_BLOCK, &m)?;
                 debug!(mac = %m, "nft: added to blocked_macs");
+                if let Some(ip) = ip.filter(|s| !s.is_empty() && *s != "0.0.0.0") {
+                    nft_del_elem(SET_QUARANTINE_IP, ip).ok();
+                    nft_add_elem(SET_BLOCK_IP, ip)?;
+                    debug!(ip, "nft: added to blocked_ips");
+                }
                 Ok(())
             }
             Backend::IptablesLegacy => ipt_block(mac),
@@ -84,13 +91,18 @@ impl IptablesEnforcer {
     }
 
     /// 단말 격리 (quarantined): DNS + Captive Portal만 허용
-    pub fn quarantine(&self, mac: &str) -> Result<()> {
+    pub fn quarantine(&self, mac: &str, ip: Option<&str>) -> Result<()> {
         match self.backend {
             Backend::Nft => {
                 let m = nft_mac(mac);
-                nft_del_elem(SET_BLOCK, &m).ok(); // block에서 제거
+                nft_del_elem(SET_BLOCK, &m).ok();
                 nft_add_elem(SET_QUARANTINE, &m)?;
                 debug!(mac = %m, "nft: added to quarantined_macs");
+                if let Some(ip) = ip.filter(|s| !s.is_empty() && *s != "0.0.0.0") {
+                    nft_del_elem(SET_BLOCK_IP, ip).ok();
+                    nft_add_elem(SET_QUARANTINE_IP, ip)?;
+                    debug!(ip, "nft: added to quarantined_ips");
+                }
                 Ok(())
             }
             Backend::IptablesLegacy => ipt_quarantine(mac),
@@ -99,13 +111,18 @@ impl IptablesEnforcer {
     }
 
     /// 단말 허용 (allowed): 모든 규칙 제거
-    pub fn allow(&self, mac: &str) -> Result<()> {
+    pub fn allow(&self, mac: &str, ip: Option<&str>) -> Result<()> {
         match self.backend {
             Backend::Nft => {
                 let m = nft_mac(mac);
                 nft_del_elem(SET_BLOCK, &m).ok();
                 nft_del_elem(SET_QUARANTINE, &m).ok();
                 debug!(mac = %m, "nft: removed from all sets (allowed)");
+                if let Some(ip) = ip.filter(|s| !s.is_empty() && *s != "0.0.0.0") {
+                    nft_del_elem(SET_BLOCK_IP, ip).ok();
+                    nft_del_elem(SET_QUARANTINE_IP, ip).ok();
+                    debug!(ip, "nft: removed from IP sets (allowed)");
+                }
                 Ok(())
             }
             Backend::IptablesLegacy => ipt_allow(mac),
@@ -118,24 +135,33 @@ impl IptablesEnforcer {
 
 fn setup_nft() -> Result<()> {
     // nft -f - 로 전체 ruleset을 원자적으로 적용
-    // flush chain → 규칙 리셋, set 내용(기존 차단 MAC)은 유지됨
+    // flush chain → 규칙 리셋, set 내용(기존 차단 MAC/IP)은 유지됨
     let ruleset = format!(
         r#"add table inet {t}
 add set inet {t} {sb} {{ type ether_addr; }}
 add set inet {t} {sq} {{ type ether_addr; }}
+add set inet {t} {sbi} {{ type ipv4_addr; }}
+add set inet {t} {sqi} {{ type ipv4_addr; }}
 add chain inet {t} nac_forward {{ type filter hook forward priority -100; policy accept; }}
 flush chain inet {t} nac_forward
 add rule inet {t} nac_forward ether saddr @{sb} drop
 add rule inet {t} nac_forward ether saddr @{sq} udp dport 53 accept
 add rule inet {t} nac_forward ether saddr @{sq} tcp dport {cp} accept
 add rule inet {t} nac_forward ether saddr @{sq} drop
+add rule inet {t} nac_forward ip saddr @{sbi} drop
+add rule inet {t} nac_forward ip saddr @{sqi} udp dport 53 accept
+add rule inet {t} nac_forward ip saddr @{sqi} tcp dport {cp} accept
+add rule inet {t} nac_forward ip saddr @{sqi} drop
 add chain inet {t} nac_input {{ type filter hook input priority -100; policy accept; }}
 flush chain inet {t} nac_input
 add rule inet {t} nac_input ether saddr @{sb} drop
+add rule inet {t} nac_input ip saddr @{sbi} drop
 "#,
         t = NFT_TABLE,
         sb = SET_BLOCK,
         sq = SET_QUARANTINE,
+        sbi = SET_BLOCK_IP,
+        sqi = SET_QUARANTINE_IP,
         cp = CAPTIVE_PORT,
     );
 

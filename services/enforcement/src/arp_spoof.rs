@@ -1,7 +1,7 @@
 //! ARP spoofing / enforcement implementation using pnet datalink.
 
 use anyhow::{bail, Context, Result};
-use nac_netproto::arp::{craft_arp_reply, craft_gratuitous_arp};
+use nac_netproto::arp::craft_arp_reply;
 use pnet::datalink::{self, Channel, DataLinkSender};
 use std::net::Ipv4Addr;
 use tracing::debug;
@@ -79,16 +79,32 @@ impl Spoofer {
         Ok(())
     }
 
-    /// ARP 차단: 무효 gratuitous ARP 브로드캐스트
-    pub fn block(&mut self, victim_ip: Ipv4Addr, _victim_mac: [u8; 6]) -> Result<()> {
-        // 브로드캐스트로 무효 ARP (enforcement MAC으로 victim IP 주장)
-        let frame = craft_gratuitous_arp(self.mac, victim_ip, victim_ip)?;
-        self.send_frame(&frame)?;
+    /// ARP 차단: 피해자와 게이트웨이 모두에게 enforcement_mac으로 독살 (quarantine과 동일)
+    ///
+    /// 트래픽을 Pi를 통해 우회시킨 뒤 nft blocked_macs 세트에서 전부 DROP한다.
+    pub fn block(
+        &mut self,
+        victim_ip: Ipv4Addr,
+        victim_mac: [u8; 6],
+        gateway_ip: Ipv4Addr,
+    ) -> Result<()> {
+        let my_mac = self.mac;
+
+        // 피해자에게 보냄: gateway_ip가 enforcement_mac 인척
+        let frame_to_victim =
+            craft_arp_reply(victim_mac, my_mac, gateway_ip, victim_mac, victim_ip)?;
+        self.send_frame(&frame_to_victim)?;
+
+        // 게이트웨이에게 보냄: victim_ip가 enforcement_mac 인척 (broadcast dst)
+        let broadcast = [0xff; 6];
+        let frame_to_gw = craft_arp_reply(broadcast, my_mac, victim_ip, broadcast, gateway_ip)?;
+        self.send_frame(&frame_to_gw)?;
 
         debug!(
             iface = %self.iface_name,
             victim_ip = %victim_ip,
-            "sent gratuitous ARP block"
+            gateway_ip = %gateway_ip,
+            "sent ARP poison (block): victim and gateway both redirected to enforcement_mac"
         );
 
         Ok(())

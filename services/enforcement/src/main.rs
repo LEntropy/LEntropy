@@ -132,7 +132,7 @@ async fn main() -> anyhow::Result<()> {
                             entry.gateway_ip,
                         ),
                         consumer::NacAction::Block => {
-                            spoofer_ref.block(entry.victim_ip, entry.victim_mac)
+                            spoofer_ref.block(entry.victim_ip, entry.victim_mac, entry.gateway_ip)
                         }
                     };
                     match result {
@@ -165,17 +165,19 @@ async fn main() -> anyhow::Result<()> {
             loop {
                 interval.tick().await;
 
-                let entries: Vec<(String, consumer::NacAction)> = {
+                let entries: Vec<(String, std::net::Ipv4Addr, consumer::NacAction)> = {
                     let s = reinforce_state.lock().unwrap();
                     s.iter()
-                        .map(|(mac, e)| (mac.clone(), e.action.clone()))
+                        .map(|(mac, e)| (mac.clone(), e.victim_ip, e.action.clone()))
                         .collect()
                 };
 
-                for (mac, action) in &entries {
+                for (mac, victim_ip, action) in &entries {
+                    let ip_str = victim_ip.to_string();
+                    let ip_opt = Some(ip_str.as_str());
                     let result = match action {
-                        consumer::NacAction::Block => reinforce_ipt.block(mac),
-                        consumer::NacAction::Quarantine => reinforce_ipt.quarantine(mac),
+                        consumer::NacAction::Block => reinforce_ipt.block(mac, ip_opt),
+                        consumer::NacAction::Quarantine => reinforce_ipt.quarantine(mac, ip_opt),
                     };
                     if let Err(e) = result {
                         tracing::warn!(error = %e, mac = %mac, "iptables reinforce failed");

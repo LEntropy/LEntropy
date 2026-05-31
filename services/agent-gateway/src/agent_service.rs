@@ -87,6 +87,24 @@ impl AgentService for AgentServiceImpl {
         &self,
         request: Request<StatusReport>,
     ) -> Result<Response<StatusAck>, Status> {
+        // JWT 토큰 검증 — Authorization: Bearer <token> 메타데이터
+        let auth_val = request
+            .metadata()
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "));
+
+        match auth_val {
+            Some(token) => {
+                if nac_auth::jwt::verify_token(token, &self.jwt_secret).is_err() {
+                    return Err(Status::unauthenticated("invalid or expired token"));
+                }
+            }
+            None => {
+                return Err(Status::unauthenticated("missing authorization token"));
+            }
+        }
+
         let req = request.into_inner();
         debug!(device_id = %req.device_id, "agent status report");
 

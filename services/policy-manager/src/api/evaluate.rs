@@ -6,11 +6,11 @@ use nac_store::{
     policy::{decision_to_status, PolicyRepo},
 };
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::endpoints::AppError;
+use super::AppState;
 
 /// POST /api/v1/policies/evaluate 요청 바디
 #[derive(Deserialize, Default)]
@@ -33,12 +33,13 @@ pub struct EvaluateResult {
 /// - policy_exempt=true 단말은 건너뜀
 /// - assigned_policy_id가 있는 단말은 해당 정책만 적용
 /// - 매칭 정책이 없으면 default_action(지정된 경우)을 적용
+/// - 상태가 변경된 단말은 NATS로 enforcement 명령을 발행
 pub async fn evaluate_policies(
-    State(pool): State<PgPool>,
+    State(state): State<AppState>,
     Json(req): Json<EvaluateRequest>,
 ) -> Result<Json<EvaluateResult>, AppError> {
-    let policy_repo = PolicyRepo::new(&pool);
-    let endpoint_repo = EndpointRepo::new(&pool);
+    let policy_repo = PolicyRepo::new(&state.pool);
+    let endpoint_repo = EndpointRepo::new(&state.pool);
 
     let rules_with_id = policy_repo.load_rules_with_id().await?;
     let id_to_idx: HashMap<Uuid, usize> = rules_with_id
@@ -88,6 +89,23 @@ pub async fn evaluate_policies(
             if ep.status != status {
                 endpoint_repo.set_status(ep.id, status).await?;
                 changed += 1;
+
+                // enforcement 명령 발행 (ARP 차단/허용)
+                let cmd = serde_json::json!({
+                    "mac_address": ep.mac_address,
+                    "ip_address": ep.ip_address.as_deref().unwrap_or(""),
+                    "action": status,
+                    "gateway_ip": "",
+                    "gateway_mac": null,
+                    "vlan_id": null,
+                });
+                if let Ok(payload) = serde_json::to_vec(&cmd) {
+                    state
+                        .nats
+                        .publish("nac.commands.enforcement", payload.into())
+                        .await
+                        .ok();
+                }
             }
         }
     }

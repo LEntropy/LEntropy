@@ -64,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // REST API 서버
-    let app = api::router(pool);
+    let app = api::router(pool, nats);
     let addr: SocketAddr = config.listen_addr.parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
 

@@ -9,6 +9,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 mod compliance;
 mod platform;
+mod software;
 mod transport;
 
 #[tokio::main]
@@ -75,7 +76,21 @@ async fn main() -> Result<()> {
     loop {
         interval.tick().await;
 
-        // 컴플라이언스 체크
+        // 소프트웨어 목록 수집
+        let sw_list = software::collect_installed_software();
+        let usb = software::usb_storage_enabled();
+        let bluetooth = software::bluetooth_enabled();
+        let sharing = software::folder_sharing_enabled();
+
+        info!(
+            sw_count = sw_list.len(),
+            usb_enabled = usb,
+            bluetooth_enabled = bluetooth,
+            folder_sharing = sharing,
+            "posture data collected"
+        );
+
+        // 컴플라이언스 체크 (기본 OS/루트 체크)
         let report = match compliance::run_checks() {
             Ok(r) => r,
             Err(e) => {
@@ -84,8 +99,11 @@ async fn main() -> Result<()> {
             }
         };
 
-        // 상태 보고 (USB/BT/공유폴더는 컴플라이언스 결과에서 추출)
-        match transport.report_status(false, false, false).await {
+        // 상태 보고
+        match transport
+            .report_status(&sw_list, usb, bluetooth, sharing)
+            .await
+        {
             Ok(action) => {
                 info!(
                     action,
@@ -111,7 +129,6 @@ fn load_or_create_device_id() -> Result<String> {
         }
     }
     let id = uuid::Uuid::new_v4().to_string();
-    // 디렉토리 생성 실패해도 계속 진행 (권한 없을 수 있음)
     if let Some(parent) = std::path::Path::new(&id_path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }

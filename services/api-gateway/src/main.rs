@@ -52,6 +52,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/endpoints/{id}/allow", post(allow_endpoint))
         .route("/endpoints/{id}/block", post(block_endpoint))
         .route("/endpoints/{id}/quarantine", post(quarantine_endpoint))
+        .route("/endpoints/{id}/policy", post(assign_policy))
+        .route("/endpoints/{id}/exempt", post(set_exempt))
         .route("/policies", get(list_policies).post(create_policy))
         .route("/policies/evaluate", post(evaluate_policies))
         .route("/policies/{id}", put(update_policy).delete(delete_policy))
@@ -150,12 +152,52 @@ async fn quarantine_endpoint(
     .await
 }
 
+async fn assign_policy(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Response, StatusCode> {
+    proxy_post_body(
+        &state.policy_manager_url,
+        &format!("/api/v1/endpoints/{id}/policy"),
+        headers,
+        body,
+    )
+    .await
+}
+
+async fn set_exempt(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Response, StatusCode> {
+    proxy_post_body(
+        &state.policy_manager_url,
+        &format!("/api/v1/endpoints/{id}/exempt"),
+        headers,
+        body,
+    )
+    .await
+}
+
 async fn list_policies(State(state): State<Arc<AppState>>) -> Result<Response, StatusCode> {
     proxy_get(&state.policy_manager_url, "/api/v1/policies").await
 }
 
-async fn evaluate_policies(State(state): State<Arc<AppState>>) -> Result<Response, StatusCode> {
-    proxy_post(&state.policy_manager_url, "/api/v1/policies/evaluate").await
+async fn evaluate_policies(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Response, StatusCode> {
+    proxy_post_body(
+        &state.policy_manager_url,
+        "/api/v1/policies/evaluate",
+        headers,
+        body,
+    )
+    .await
 }
 
 async fn create_policy(

@@ -28,6 +28,8 @@ fn v1_router(pool: PgPool) -> Router {
             "/endpoints/{id}/quarantine",
             post(endpoints::quarantine_endpoint),
         )
+        .route("/endpoints/{id}/policy", post(endpoints::assign_policy))
+        .route("/endpoints/{id}/exempt", post(endpoints::set_exempt))
         // Policies
         .route(
             "/policies",

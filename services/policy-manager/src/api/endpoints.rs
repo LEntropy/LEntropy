@@ -138,6 +138,77 @@ pub async fn quarantine_endpoint(
     update_endpoint_status(&pool, id, "quarantined", "endpoint_quarantined").await
 }
 
+/// POST /api/v1/endpoints/:id/policy — 수동 정책 할당 (policy_id: null 이면 해제)
+#[derive(Deserialize)]
+pub struct AssignPolicyRequest {
+    pub policy_id: Option<Uuid>,
+}
+
+pub async fn assign_policy(
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<AssignPolicyRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let repo = EndpointRepo::new(&pool);
+    match repo.find_by_id(id).await? {
+        None => Err(AppError::NotFound(format!("endpoint {id} not found"))),
+        Some(_) => {
+            repo.set_policy(id, req.policy_id).await?;
+            let audit = AuditRepo::new(&pool);
+            audit
+                .log(
+                    "endpoint_policy_assigned",
+                    Some(id),
+                    "api",
+                    serde_json::json!({ "policy_id": req.policy_id }),
+                )
+                .await?;
+            match repo.find_by_id(id).await? {
+                Some(ep) => Ok(Json(serde_json::to_value(ep)?)),
+                None => Err(AppError::NotFound(format!("endpoint {id} not found"))),
+            }
+        }
+    }
+}
+
+/// POST /api/v1/endpoints/:id/exempt — 정책 예외 설정
+#[derive(Deserialize)]
+pub struct SetExemptRequest {
+    pub exempt: bool,
+}
+
+pub async fn set_exempt(
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<SetExemptRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let repo = EndpointRepo::new(&pool);
+    match repo.find_by_id(id).await? {
+        None => Err(AppError::NotFound(format!("endpoint {id} not found"))),
+        Some(_) => {
+            repo.set_exempt(id, req.exempt).await?;
+            let audit = AuditRepo::new(&pool);
+            let event = if req.exempt {
+                "endpoint_policy_exempted"
+            } else {
+                "endpoint_policy_unexempted"
+            };
+            audit
+                .log(
+                    event,
+                    Some(id),
+                    "api",
+                    serde_json::json!({ "exempt": req.exempt }),
+                )
+                .await?;
+            match repo.find_by_id(id).await? {
+                Some(ep) => Ok(Json(serde_json::to_value(ep)?)),
+                None => Err(AppError::NotFound(format!("endpoint {id} not found"))),
+            }
+        }
+    }
+}
+
 // ── 에러 타입 ──────────────────────────────────────────────────────────────
 
 #[derive(Debug)]

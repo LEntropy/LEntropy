@@ -29,9 +29,14 @@ export interface Endpoint {
   ip_address: string | null
   hostname: string | null
   os_family: string | null
-  status: 'allowed' | 'blocked' | 'quarantine' | 'pending'
+  os_version: string | null
+  device_type: string | null
+  status: 'allowed' | 'denied' | 'quarantined' | 'pending'
   last_seen: string | null
   created_at: string
+  assigned_policy_id: string | null
+  policy_exempt: boolean
+  is_compliant: boolean | null
 }
 
 export interface Policy {
@@ -76,6 +81,14 @@ export const endpointsApi = {
   block: (id: string) => api.post(`/endpoints/${id}/block`),
   allow: (id: string) => api.post(`/endpoints/${id}/allow`),
   quarantine: (id: string) => api.post(`/endpoints/${id}/quarantine`),
+  assignPolicy: (id: string, policyId: string | null) =>
+    api.post(`/endpoints/${id}/policy`, { policy_id: policyId }),
+  setExempt: (id: string, exempt: boolean) =>
+    api.post(`/endpoints/${id}/exempt`, { exempt }),
+  getLogs: (id: string, limit = 30) =>
+    api
+      .get<PagedResponse<AuditLog>>(`/audit?endpoint_id=${id}&limit=${limit}`)
+      .then((r) => ({ ...r, data: r.data.items })),
 }
 
 export const policiesApi = {
@@ -83,7 +96,10 @@ export const policiesApi = {
   create: (data: Omit<Policy, 'id' | 'created_at'>) => api.post<Policy>('/policies', data),
   update: (id: string, data: Partial<Policy>) => api.put<Policy>(`/policies/${id}`, data),
   delete: (id: string) => api.delete(`/policies/${id}`),
-  evaluate: () => api.post<{ evaluated: number; changed: number }>('/policies/evaluate'),
+  evaluate: (defaultAction: string | null = null) =>
+    api.post<{ evaluated: number; changed: number; skipped: number }>('/policies/evaluate', {
+      default_action: defaultAction,
+    }),
 }
 
 export const auditApi = {

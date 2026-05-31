@@ -38,7 +38,12 @@ export function Policies() {
   const { data: policies, loading, reload } = useApi<Policy[]>(policiesApi.list)
   const [creating, setCreating] = useState(false)
   const [evaluating, setEvaluating] = useState(false)
-  const [evalResult, setEvalResult] = useState<{ evaluated: number; changed: number } | null>(null)
+  const [evalResult, setEvalResult] = useState<{
+    evaluated: number
+    changed: number
+    skipped: number
+  } | null>(null)
+  const [defaultAction, setDefaultAction] = useState<string>('')
 
   const [form, setForm] = useState({
     name: '',
@@ -68,7 +73,7 @@ export function Policies() {
     setEvaluating(true)
     setEvalResult(null)
     try {
-      const res = await policiesApi.evaluate()
+      const res = await policiesApi.evaluate(defaultAction || null)
       setEvalResult(res.data)
       reload()
     } finally {
@@ -91,7 +96,20 @@ export function Policies() {
     <div className="p-6">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">정책 관리</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <div className="flex items-center gap-1.5">
+            <label className="text-xs text-gray-500 whitespace-nowrap">미매칭 단말:</label>
+            <select
+              value={defaultAction}
+              onChange={(e) => setDefaultAction(e.target.value)}
+              className="text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="">변경 없음</option>
+              <option value="allowed">허용</option>
+              <option value="denied">차단</option>
+              <option value="quarantined">격리</option>
+            </select>
+          </div>
           <button
             onClick={handleEvaluate}
             disabled={evaluating}
@@ -129,6 +147,11 @@ export function Policies() {
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 mb-4 text-sm text-emerald-800">
           평가 완료 — 전체 <strong>{evalResult.evaluated}개</strong> 단말 중{' '}
           <strong>{evalResult.changed}개</strong> 상태 변경됨
+          {evalResult.skipped > 0 && (
+            <span className="text-amber-600 ml-1">
+              (예외 단말 <strong>{evalResult.skipped}개</strong> 제외)
+            </span>
+          )}
         </div>
       )}
 

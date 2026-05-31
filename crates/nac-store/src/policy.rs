@@ -158,10 +158,32 @@ impl<'a> PolicyRepo<'a> {
             .await?;
         Ok(result.rows_affected() > 0)
     }
+
+    /// 활성화된 정책을 (UUID, PolicyRule) 쌍으로 반환 — evaluate에서 수동 할당 정책 조회용
+    pub async fn load_rules_with_id(&self) -> Result<Vec<(Uuid, PolicyRule)>> {
+        let rows = sqlx::query_as::<_, PolicyRow>(
+            "SELECT id, name, description, priority, conditions, action, vlan_id, enabled, created_at \
+             FROM policies WHERE enabled = true ORDER BY priority ASC",
+        )
+        .fetch_all(self.pool)
+        .await?;
+
+        rows.iter()
+            .map(|r| Ok((r.id, to_policy_rule(r)?)))
+            .collect()
+    }
+
+    /// 비활성 정책 포함 — 수동 할당된 정책이 비활성이어도 적용하기 위해 사용
+    pub async fn find_rule_by_id(&self, id: Uuid) -> Result<Option<PolicyRule>> {
+        match self.find_by_id(id).await? {
+            Some(r) => Ok(Some(to_policy_rule(&r)?)),
+            None => Ok(None),
+        }
+    }
 }
 
 /// DB PolicyRow → nac-policy-engine PolicyRule 변환
-fn to_policy_rule(row: &PolicyRow) -> Result<PolicyRule> {
+pub fn to_policy_rule(row: &PolicyRow) -> Result<PolicyRule> {
     // conditions 컬럼이 빈 배열이면 항상 매칭되는 And{} 조건 사용
     let conditions: Vec<Condition> =
         if row.conditions.is_null() || row.conditions == serde_json::Value::Array(vec![]) {

@@ -24,6 +24,8 @@ pub struct EndpointRow {
     pub last_seen: OffsetDateTime,
     pub is_compliant: Option<bool>,
     pub last_posture_check: Option<OffsetDateTime>,
+    pub assigned_policy_id: Option<Uuid>,
+    pub policy_exempt: bool,
 }
 
 /// 단말 신규 등록 / 업서트용 파라미터
@@ -43,6 +45,14 @@ pub struct UpsertEndpoint {
 pub struct EndpointRepo<'a> {
     pool: &'a PgPool,
 }
+
+const SELECT_COLS: &str = r#"
+    id, mac_address::text, ip_address::text,
+    hostname, os_family, os_version, device_type, vendor,
+    vlan_id, switch_port, interface, username, status,
+    first_seen, last_seen, is_compliant, last_posture_check,
+    assigned_policy_id, policy_exempt
+"#;
 
 impl<'a> EndpointRepo<'a> {
     pub fn new(pool: &'a PgPool) -> Self {
@@ -70,7 +80,8 @@ impl<'a> EndpointRepo<'a> {
                 id, mac_address::text, ip_address::text,
                 hostname, os_family, os_version, device_type, vendor,
                 vlan_id, switch_port, interface, username, status,
-                first_seen, last_seen, is_compliant, last_posture_check
+                first_seen, last_seen, is_compliant, last_posture_check,
+                assigned_policy_id, policy_exempt
             "#,
         )
         .bind(&ep.mac_address)
@@ -89,17 +100,9 @@ impl<'a> EndpointRepo<'a> {
 
     /// 전체 단말 목록 (최근 탐지 순)
     pub async fn list(&self, limit: i64, offset: i64) -> Result<Vec<EndpointRow>> {
-        let rows = sqlx::query_as::<_, EndpointRow>(
-            r#"
-            SELECT id, mac_address::text, ip_address::text,
-                   hostname, os_family, os_version, device_type, vendor,
-                   vlan_id, switch_port, interface, username, status,
-                   first_seen, last_seen, is_compliant, last_posture_check
-            FROM endpoints
-            ORDER BY last_seen DESC
-            LIMIT $1 OFFSET $2
-            "#,
-        )
+        let rows = sqlx::query_as::<_, EndpointRow>(&format!(
+            "SELECT {SELECT_COLS} FROM endpoints ORDER BY last_seen DESC LIMIT $1 OFFSET $2"
+        ))
         .bind(limit)
         .bind(offset)
         .fetch_all(self.pool)
@@ -110,16 +113,9 @@ impl<'a> EndpointRepo<'a> {
 
     /// MAC 주소로 단말 조회
     pub async fn find_by_mac(&self, mac: &str) -> Result<Option<EndpointRow>> {
-        let row = sqlx::query_as::<_, EndpointRow>(
-            r#"
-            SELECT id, mac_address::text, ip_address::text,
-                   hostname, os_family, os_version, device_type, vendor,
-                   vlan_id, switch_port, interface, username, status,
-                   first_seen, last_seen, is_compliant, last_posture_check
-            FROM endpoints
-            WHERE mac_address = $1::macaddr
-            "#,
-        )
+        let row = sqlx::query_as::<_, EndpointRow>(&format!(
+            "SELECT {SELECT_COLS} FROM endpoints WHERE mac_address = $1::macaddr"
+        ))
         .bind(mac)
         .fetch_optional(self.pool)
         .await?;
@@ -129,16 +125,9 @@ impl<'a> EndpointRepo<'a> {
 
     /// ID로 단말 조회
     pub async fn find_by_id(&self, id: Uuid) -> Result<Option<EndpointRow>> {
-        let row = sqlx::query_as::<_, EndpointRow>(
-            r#"
-            SELECT id, mac_address::text, ip_address::text,
-                   hostname, os_family, os_version, device_type, vendor,
-                   vlan_id, switch_port, interface, username, status,
-                   first_seen, last_seen, is_compliant, last_posture_check
-            FROM endpoints
-            WHERE id = $1
-            "#,
-        )
+        let row = sqlx::query_as::<_, EndpointRow>(&format!(
+            "SELECT {SELECT_COLS} FROM endpoints WHERE id = $1"
+        ))
         .bind(id)
         .fetch_optional(self.pool)
         .await?;
@@ -150,6 +139,26 @@ impl<'a> EndpointRepo<'a> {
     pub async fn set_status(&self, id: Uuid, status: &str) -> Result<()> {
         sqlx::query("UPDATE endpoints SET status = $1 WHERE id = $2")
             .bind(status)
+            .bind(id)
+            .execute(self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// 수동 정책 할당 (None 이면 할당 해제 → 자동 평가로 복귀)
+    pub async fn set_policy(&self, id: Uuid, policy_id: Option<Uuid>) -> Result<()> {
+        sqlx::query("UPDATE endpoints SET assigned_policy_id = $1 WHERE id = $2")
+            .bind(policy_id)
+            .bind(id)
+            .execute(self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// 정책 예외 설정 (true: 정책 평가 대상에서 제외)
+    pub async fn set_exempt(&self, id: Uuid, exempt: bool) -> Result<()> {
+        sqlx::query("UPDATE endpoints SET policy_exempt = $1 WHERE id = $2")
+            .bind(exempt)
             .bind(id)
             .execute(self.pool)
             .await?;

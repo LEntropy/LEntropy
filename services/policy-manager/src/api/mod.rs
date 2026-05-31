@@ -1,5 +1,6 @@
 pub mod audit;
 pub mod endpoints;
+pub mod evaluate;
 pub mod health;
 pub mod policies;
 pub mod stats;
@@ -32,6 +33,7 @@ fn v1_router(pool: PgPool) -> Router {
             "/policies",
             get(policies::list_policies).post(policies::create_policy),
         )
+        .route("/policies/evaluate", post(evaluate::evaluate_policies))
         .route(
             "/policies/{id}",
             get(policies::get_policy)

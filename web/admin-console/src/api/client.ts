@@ -41,6 +41,7 @@ export interface Policy {
   priority: number
   action: 'allow' | 'deny' | 'quarantine'
   enabled: boolean
+  conditions: unknown[]
   created_at: string
 }
 
@@ -82,6 +83,7 @@ export const policiesApi = {
   create: (data: Omit<Policy, 'id' | 'created_at'>) => api.post<Policy>('/policies', data),
   update: (id: string, data: Partial<Policy>) => api.put<Policy>(`/policies/${id}`, data),
   delete: (id: string) => api.delete(`/policies/${id}`),
+  evaluate: () => api.post<{ evaluated: number; changed: number }>('/policies/evaluate'),
 }
 
 export const auditApi = {

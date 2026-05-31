@@ -3,6 +3,7 @@ use nac_policy_engine::rule::{Condition, PolicyRule};
 use nac_policy_engine::PolicyDecision;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// DB에서 읽어온 정책 레코드
@@ -16,6 +17,7 @@ pub struct PolicyRow {
     pub action: String,
     pub vlan_id: Option<i16>,
     pub enabled: bool,
+    pub created_at: OffsetDateTime,
 }
 
 /// 정책 생성 파라미터
@@ -24,7 +26,7 @@ pub struct CreatePolicy {
     pub name: String,
     pub description: Option<String>,
     pub priority: i32,
-    pub conditions: serde_json::Value,
+    pub conditions: Option<serde_json::Value>,
     pub action: String,
     pub vlan_id: Option<i16>,
 }
@@ -54,7 +56,7 @@ impl<'a> PolicyRepo<'a> {
     /// 활성화된 정책을 우선순위 순으로 모두 로드해 PolicyRule 목록으로 반환
     pub async fn load_rules(&self) -> Result<Vec<PolicyRule>> {
         let rows = sqlx::query_as::<_, PolicyRow>(
-            "SELECT id, name, description, priority, conditions, action, vlan_id, enabled \
+            "SELECT id, name, description, priority, conditions, action, vlan_id, enabled, created_at \
              FROM policies WHERE enabled = true ORDER BY priority ASC",
         )
         .fetch_all(self.pool)
@@ -66,7 +68,7 @@ impl<'a> PolicyRepo<'a> {
     /// 모든 정책 목록 반환 (우선순위 순)
     pub async fn list_all(&self) -> Result<Vec<PolicyRow>> {
         let rows = sqlx::query_as::<_, PolicyRow>(
-            "SELECT id, name, description, priority, conditions, action, vlan_id, enabled \
+            "SELECT id, name, description, priority, conditions, action, vlan_id, enabled, created_at \
              FROM policies ORDER BY priority ASC",
         )
         .fetch_all(self.pool)
@@ -77,7 +79,7 @@ impl<'a> PolicyRepo<'a> {
     /// ID로 정책 조회
     pub async fn find_by_id(&self, id: Uuid) -> Result<Option<PolicyRow>> {
         let row = sqlx::query_as::<_, PolicyRow>(
-            "SELECT id, name, description, priority, conditions, action, vlan_id, enabled \
+            "SELECT id, name, description, priority, conditions, action, vlan_id, enabled, created_at \
              FROM policies WHERE id = $1",
         )
         .bind(id)
@@ -92,13 +94,13 @@ impl<'a> PolicyRepo<'a> {
             r#"
             INSERT INTO policies (name, description, priority, conditions, action, vlan_id, enabled)
             VALUES ($1, $2, $3, $4, $5, $6, true)
-            RETURNING id, name, description, priority, conditions, action, vlan_id, enabled
+            RETURNING id, name, description, priority, conditions, action, vlan_id, enabled, created_at
             "#,
         )
         .bind(&p.name)
         .bind(&p.description)
         .bind(p.priority)
-        .bind(&p.conditions)
+        .bind(p.conditions.as_ref().unwrap_or(&serde_json::json!([])))
         .bind(&p.action)
         .bind(p.vlan_id)
         .fetch_one(self.pool)
@@ -132,7 +134,7 @@ impl<'a> PolicyRepo<'a> {
             SET name = $1, description = $2, priority = $3, conditions = $4,
                 action = $5, vlan_id = $6, enabled = $7
             WHERE id = $8
-            RETURNING id, name, description, priority, conditions, action, vlan_id, enabled
+            RETURNING id, name, description, priority, conditions, action, vlan_id, enabled, created_at
             "#,
         )
         .bind(name)

@@ -53,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/endpoints/{id}/block", post(block_endpoint))
         .route("/endpoints/{id}/quarantine", post(quarantine_endpoint))
         .route("/policies", get(list_policies).post(create_policy))
+        .route("/policies/evaluate", post(evaluate_policies))
         .route("/policies/{id}", put(update_policy).delete(delete_policy))
         .route("/audit", get(list_audit))
         .route("/stats", get(get_stats))
@@ -151,6 +152,10 @@ async fn quarantine_endpoint(
 
 async fn list_policies(State(state): State<Arc<AppState>>) -> Result<Response, StatusCode> {
     proxy_get(&state.policy_manager_url, "/api/v1/policies").await
+}
+
+async fn evaluate_policies(State(state): State<Arc<AppState>>) -> Result<Response, StatusCode> {
+    proxy_post(&state.policy_manager_url, "/api/v1/policies/evaluate").await
 }
 
 async fn create_policy(

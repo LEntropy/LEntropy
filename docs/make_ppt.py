@@ -1,39 +1,38 @@
-"""NAC PPT 생성 스크립트"""
+"""NAC PPT 생성 스크립트 — v2 (필요성/배경·한계·기능명세·상용솔루션 비교 추가)"""
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
-from pptx.util import Inches, Pt
 import copy
 
 # ── 색상 팔레트 ────────────────────────────────────────────────────────────────
-C_DARK    = RGBColor(0x1A, 0x1A, 0x2E)   # 딥 네이비 (배경)
-C_ACCENT  = RGBColor(0x16, 0x21, 0x3E)   # 미드 네이비
-C_BLUE    = RGBColor(0x0F, 0x3D, 0x91)   # 강조 블루
-C_CYAN    = RGBColor(0x00, 0xB4, 0xD8)   # 밝은 시안
-C_GREEN   = RGBColor(0x00, 0xC8, 0x9A)   # 에메랄드 그린
+C_DARK    = RGBColor(0x1A, 0x1A, 0x2E)
+C_ACCENT  = RGBColor(0x16, 0x21, 0x3E)
+C_BLUE    = RGBColor(0x0F, 0x3D, 0x91)
+C_CYAN    = RGBColor(0x00, 0xB4, 0xD8)
+C_GREEN   = RGBColor(0x00, 0xC8, 0x9A)
 C_WHITE   = RGBColor(0xFF, 0xFF, 0xFF)
 C_LGRAY   = RGBColor(0xCC, 0xCC, 0xCC)
 C_YELLOW  = RGBColor(0xFF, 0xD6, 0x00)
 C_RED     = RGBColor(0xFF, 0x4D, 0x6D)
 C_ORANGE  = RGBColor(0xFF, 0x8C, 0x42)
+C_PURPLE  = RGBColor(0x7B, 0x2F, 0xBE)
 
-W = Inches(13.33)   # 와이드 16:9
+W = Inches(13.33)
 H = Inches(7.5)
 
 prs = Presentation()
 prs.slide_width  = W
 prs.slide_height = H
 
-BLANK = prs.slide_layouts[6]   # 완전 빈 레이아웃
+BLANK = prs.slide_layouts[6]
 
 
 # ── 헬퍼 함수 ─────────────────────────────────────────────────────────────────
 
-def add_rect(slide, x, y, w, h, fill=C_DARK, alpha=None):
+def add_rect(slide, x, y, w, h, fill=C_DARK):
     shape = slide.shapes.add_shape(
-        1,  # MSO_SHAPE_TYPE.RECTANGLE
-        Inches(x), Inches(y), Inches(w), Inches(h)
+        1, Inches(x), Inches(y), Inches(w), Inches(h)
     )
     shape.fill.solid()
     shape.fill.fore_color.rgb = fill
@@ -60,7 +59,6 @@ def add_text(slide, text, x, y, w, h,
 
 def add_multiline(slide, lines, x, y, w, h, size=16, color=C_WHITE,
                   bold_first=False, line_spacing=None):
-    """lines: list of (text, bold, color_override)"""
     txb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
     txb.word_wrap = True
     tf = txb.text_frame
@@ -71,10 +69,7 @@ def add_multiline(slide, lines, x, y, w, h, size=16, color=C_WHITE,
             text, b, c = item, (bold_first and first), color
         else:
             text, b, c = item[0], item[1], item[2] if len(item) > 2 else color
-        if first:
-            p = tf.paragraphs[0]
-        else:
-            p = tf.add_paragraph()
+        p = tf.paragraphs[0] if first else tf.add_paragraph()
         p.alignment = PP_ALIGN.LEFT
         run = p.add_run()
         run.text = text
@@ -135,14 +130,10 @@ def note(slide, text):
 sl = prs.slides.add_slide(BLANK)
 bg(sl)
 
-# 배경 장식 블록
 add_rect(sl, 0, 0, 3.5, 7.5, fill=C_BLUE)
 add_rect(sl, 3.5, 0, 0.08, 7.5, fill=C_CYAN)
-
-# 왼쪽 아이콘 느낌 텍스트
 add_text(sl, "🔒", 0.5, 1.5, 2.5, 1.5, size=72, align=PP_ALIGN.CENTER)
 
-# 메인 제목
 add_text(sl, "NAC", 4.0, 1.2, 9.0, 1.2,
          size=72, bold=True, color=C_CYAN)
 add_text(sl, "Network Access Control", 4.0, 2.3, 9.0, 0.55,
@@ -154,15 +145,14 @@ add_text(sl, "NAC 개념 설명 및 활용 방안과 개발 개요", 4.0, 3.1, 9
          size=22, bold=True, color=C_WHITE)
 add_text(sl, "발표 시간 30분  |  2026", 4.0, 3.75, 9.0, 0.4,
          size=15, color=C_LGRAY)
-
 add_text(sl, "LEntropy NAC Platform v0.1", 4.0, 6.8, 9.0, 0.4,
          size=13, color=C_LGRAY)
 
 note(sl, """[표지 — 약 1분]
 
-안녕하세요. 오늘은 NAC, 즉 네트워크 접근 제어 시스템의 개념과 활용 방안, 그리고 저희가 직접 개발한 LEntropy NAC 플랫폼의 개발 개요를 소개해 드리겠습니다.
-발표는 총 30분으로 진행되며, 이론 개념 → 실무 활용 → 개발 구현 순서로 설명드리겠습니다.
-궁금하신 점은 발표 후 Q&A 시간에 질문해 주시기 바랍니다.""")
+안녕하세요. 오늘은 NAC, 즉 네트워크 접근 제어 시스템의 개념과 활용 방안,
+그리고 저희가 직접 개발한 LEntropy NAC 플랫폼의 개발 개요를 소개해 드리겠습니다.
+발표는 총 30분으로 진행되며, 이론 개념 → 기술 원리 → 실무 활용 → 개발 구현 순서로 설명드리겠습니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SLIDE 2 — 목차
@@ -172,11 +162,11 @@ bg(sl)
 slide_header(sl, "목차", "Table of Contents", "02")
 
 sections = [
-    ("1부  개념", "NAC란 무엇인가?\n왜 NAC가 필요한가?", C_BLUE),
-    ("2부  원리", "동작 방식\n에이전트리스 vs 에이전트", C_CYAN),
-    ("3부  활용", "기업 / 교육 / 의료 환경\n실제 적용 시나리오", C_GREEN),
-    ("4부  개발", "아키텍처 & 기술 스택\n컴포넌트 구현 현황", C_ORANGE),
-    ("5부  결론", "핵심 가치 요약\n향후 로드맵", C_YELLOW),
+    ("1부  개념", "NAC 정의\n필요성 & 배경\n보안 통계", C_BLUE),
+    ("2부  원리", "동작 원리\n기술적 한계\n주요 기능 명세", C_CYAN),
+    ("3부  활용", "제어 방식 비교\n산업별 활용\n상용솔루션 비교", C_GREEN),
+    ("4부  개발", "아키텍처 & 기술스택\n구현 현황 & 데모", C_ORANGE),
+    ("5부  결론", "보안 고려사항\n로드맵 & 핵심가치", C_YELLOW),
 ]
 
 xs = [0.4, 2.9, 5.4, 7.9, 10.4]
@@ -192,7 +182,11 @@ for i, (title, body, color) in enumerate(sections):
 note(sl, """[목차 — 약 30초]
 
 발표는 크게 5개 파트로 구성됩니다.
-1부에서는 NAC의 개념, 2부에서는 기술적 동작 원리, 3부에서는 다양한 산업 환경에서의 활용 방안, 4부에서는 실제 개발 내용, 마지막으로 5부에서 결론 및 향후 계획을 말씀드리겠습니다.""")
+1부 개념: NAC 정의와 필요성 배경을 설명합니다.
+2부 원리: 동작 원리와 함께 기술적 한계, 주요 기능 명세를 다룹니다.
+3부 활용: 제어 방식 비교, 산업별 활용, 상용솔루션 비교를 다룹니다.
+4부 개발: 실제 구현 아키텍처와 구현 현황을 설명합니다.
+5부 결론: 보안 고려사항과 로드맵을 정리합니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SLIDE 3 — NAC란 무엇인가?
@@ -233,38 +227,62 @@ NAC는 네트워크 접근 제어(Network Access Control)의 약자입니다.
 넷째, 제어 — 정책을 위반한 장치를 실시간으로 차단하거나 격리합니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SLIDE 4 — 왜 NAC가 필요한가?
+# SLIDE 4 — 필요성과 배경 (강화)
 # ══════════════════════════════════════════════════════════════════════════════
 sl = prs.slides.add_slide(BLANK)
 bg(sl)
-slide_header(sl, "왜 NAC가 필요한가?", "보안 위협 현황과 네트워크 변화", "04")
+slide_header(sl, "왜 NAC가 필요한가?", "보안 위협 현황 · 규제 환경 · 시장 변화", "04")
 
-threats = [
-    "🖥️ BYOD 확산  —  직원 개인 기기(스마트폰, 노트북)의 업무망 접속",
-    "🌐 IoT 폭증  —  IP카메라, 프린터, 스마트 센서 등 비관리 장치 급증",
-    "🦠 내부 위협  —  악성코드 감염 단말이 내부망을 통해 횡적 이동",
-    "🔓 미인증 접속  —  퇴직자 노트북, 외부 방문자 USB 등 비인가 장치",
-    "📋 컴플라이언스  —  개인정보보호법·정보보호관리체계(ISMS-P) 요구사항",
+# 상단 통계 3개
+stats = [
+    (C_RED,    "$4.45M",    "2023 IBM\n데이터 침해\n평균 비용"),
+    (C_ORANGE, "74%",       "2023 Verizon DBIR\n침해 원인 중\n사람 요소 비율"),
+    (C_CYAN,   "150억+",    "2025년 예측\nIoT 연결 기기 수\n(Statista)"),
+    (C_GREEN,  "3.5배",     "재택·하이브리드 근무\n도입 이후 BYOD\n보안 사고 증가율"),
 ]
-for i, t in enumerate(threats):
-    add_rect(sl, 0.5, 1.65 + i * 0.98, 12.3, 0.82, fill=C_ACCENT)
-    add_rect(sl, 0.5, 1.65 + i * 0.98, 0.15, 0.82, fill=C_RED)
-    add_text(sl, t, 0.78, 1.68 + i * 0.98, 11.8, 0.75,
-             size=16, color=C_WHITE)
+for i, (color, num, label) in enumerate(stats):
+    x = 0.4 + i * 3.25
+    add_rect(sl, x, 1.72, 3.05, 1.45, fill=C_ACCENT)
+    add_rect(sl, x, 1.72, 3.05, 0.08, fill=color)
+    add_text(sl, num, x + 0.1, 1.82, 2.85, 0.7,
+             size=32, bold=True, color=color, align=PP_ALIGN.CENTER)
+    add_text(sl, label, x + 0.1, 2.5, 2.85, 0.6,
+             size=11, color=C_LGRAY, align=PP_ALIGN.CENTER)
 
-add_rect(sl, 0.5, 6.6, 12.3, 0.65, fill=C_BLUE)
-add_text(sl, "🎯  NAC 도입 시  →  미인증 장치 접속 차단 + 내부망 침해 범위 최소화 + 규정 준수 자동화",
-         0.65, 6.65, 12.0, 0.55, size=15, bold=True, color=C_WHITE)
+# 중간 위협/배경 목록
+threats = [
+    ("🖥️ BYOD 확산",     "직원 개인 기기(스마트폰·노트북)가 업무망에 무분별하게 접속 — 보안 정책 적용 불가"),
+    ("🌐 IoT 폭증",      "IP카메라·프린터·스마트 센서 등 관리 불가 장치 급증 — 단일 감염으로 내부망 전체 위험"),
+    ("🦠 내부 위협",     "악성코드 감염 단말이 내부망을 통해 횡적 이동(Lateral Movement) — 탐지 어려움"),
+    ("📋 규제 강화",     "개인정보보호법·ISMS-P·의료기관 망분리 의무 — 접근 이력 기록 및 비인가 접속 차단 증거 필요"),
+]
+for i, (title, desc) in enumerate(threats):
+    y = 3.35 + i * 0.82
+    add_rect(sl, 0.4, y, 12.5, 0.72, fill=C_ACCENT)
+    add_rect(sl, 0.4, y, 0.12, 0.72, fill=C_RED)
+    add_text(sl, title, 0.65, y + 0.08, 2.2, 0.56,
+             size=13, bold=True, color=C_CYAN)
+    add_text(sl, desc, 2.9, y + 0.08, 9.9, 0.56,
+             size=12, color=C_WHITE)
 
-note(sl, """[왜 NAC가 필요한가 — 약 2분]
+add_rect(sl, 0.4, 6.65, 12.5, 0.58, fill=C_BLUE)
+add_text(sl, "🎯  Zero Trust 패러다임 전환 — \"신뢰하지 말고, 항상 검증하라 (Never Trust, Always Verify)\"  →  NAC는 핵심 구현 수단",
+         0.6, 6.7, 12.1, 0.48, size=14, bold=True, color=C_WHITE, align=PP_ALIGN.CENTER)
 
-현대 기업 네트워크는 과거와 완전히 달라졌습니다.
-직원 개인 스마트폰이 회사 Wi-Fi에 연결되고, 공장 바닥에는 수십 개의 IoT 센서가 깔려 있습니다.
-이런 환경에서 관리되지 않는 장치 하나가 악성코드에 감염되면, 내부망 전체가 위험에 노출됩니다.
+note(sl, """[필요성과 배경 — 약 2분 30초]
 
-또한 개인정보보호법과 ISMS-P 등 법적 요구사항도 엄격해졌습니다.
-네트워크 접근 이력을 기록하고, 비인가 장치 접속을 차단했다는 증거를 제시해야 합니다.
-NAC는 이 모든 요구사항을 자동으로 처리해 줍니다.""")
+현대 기업 네트워크는 경계가 사라졌습니다.
+재택근무 확산, BYOD, IoT 폭증으로 '신뢰할 수 있는 내부망'이라는 개념이 무너졌습니다.
+
+2023년 IBM 보고서에 따르면 데이터 침해 한 건당 평균 44억 원이 넘는 손실이 발생합니다.
+Verizon DBIR은 침해의 74%가 사람 요소, 즉 내부자 실수나 도용된 계정에서 비롯된다고 밝혔습니다.
+
+여기서 최신 보안 패러다임이 등장합니다. Zero Trust입니다.
+내부망이라도 신뢰하지 않고, 접속하는 모든 장치를 항상 검증하자는 원칙입니다.
+NAC는 바로 이 Zero Trust를 네트워크 레이어에서 구현하는 핵심 수단입니다.
+
+또한 개인정보보호법과 ISMS-P 등 법적 요구사항도 강화되어,
+비인가 장치 접속 차단과 감사 로그 보존이 법적 의무가 되었습니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SLIDE 5 — NAC 동작 원리 (전체 흐름)
@@ -301,20 +319,148 @@ note(sl, """[동작 원리 — 약 3분]
 NAC의 동작은 5단계로 이루어집니다.
 
 1단계 탐지: 장치가 네트워크에 연결되는 순간, ARP 브로드캐스트나 DHCP 요청을 통해 자동으로 감지됩니다.
-2단계 식별: MAC 주소, IP, OS 종류를 수집합니다. 에이전트 없이도 DHCP 옵션 분석으로 Windows인지 Linux인지 구분할 수 있습니다.
-3단계 인증: 802.1x 프로토콜로 RADIUS 서버에 인증을 요청하거나, 웹 브라우저를 캡티브 포털로 리다이렉트하여 로그인을 요구합니다.
-4단계 정책 평가: 보안 패치 적용 여부, 암호화 설정, 화이트리스트 등록 여부 등을 검사합니다.
-5단계 제어: 검사 결과에 따라 허용, 차단, 또는 격리 네트워크로 이동시킵니다.
-모든 과정은 감사 로그에 자동 기록됩니다.""")
+2단계 식별: MAC 주소, IP, OS 종류를 수집합니다. 에이전트 없이도 DHCP 옵션 분석으로 OS를 구분할 수 있습니다.
+3단계 인증: 802.1x 프로토콜로 RADIUS 서버에 인증을 요청하거나, 웹 브라우저를 캡티브 포털로 리다이렉트합니다.
+4단계 정책 평가: 보안 패치, 암호화 설정, 화이트리스트 등록 여부 등을 검사합니다.
+5단계 제어: 검사 결과에 따라 허용, 차단, 또는 격리 네트워크로 이동시킵니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SLIDE 6 — 에이전트리스 vs 에이전트 방식
+# SLIDE 6 — NAC 기술적 한계 (NEW)
 # ══════════════════════════════════════════════════════════════════════════════
 sl = prs.slides.add_slide(BLANK)
 bg(sl)
-slide_header(sl, "두 가지 제어 방식", "에이전트리스 vs 에이전트 기반", "06")
+slide_header(sl, "NAC의 기술적 한계", "알아야 할 제약사항과 대응 방안", "06")
 
-# 왼쪽 에이전트리스
+limits = [
+    (C_RED,    "ARP 스푸핑 우회",
+     "스위치에 DAI(Dynamic ARP Inspection) 또는 포트 보안이 활성화된 경우\n"
+     "ARP 스푸핑이 스위치 자체에서 차단됨  →  VLAN 기반 제어로 전환 필요"),
+    (C_RED,    "MAC 스푸핑 (Spoofing)",
+     "공격자가 인증된 단말의 MAC 주소를 복제하여 화이트리스트 우회 가능\n"
+     "대응: 802.1x 인증서 기반 EAP-TLS 사용 또는 단말 핑거프린팅 강화"),
+    (C_ORANGE, "에이전트 삭제/우회",
+     "사용자가 endpoint-agent를 강제 종료하거나 삭제할 경우 컴플라이언스 검사 회피\n"
+     "대응: 에이전트리스 방식(ARP/DHCP)과 병행 — 에이전트 없어도 네트워크 차단 유지"),
+    (C_ORANGE, "IPv6 맹점",
+     "ARP는 IPv4 전용 프로토콜 — IPv6 환경에서는 NDP(Neighbor Discovery Protocol) 별도 처리 필요\n"
+     "IPv6 듀얼스택 네트워크에서 IPv6 경로로 제어를 우회할 수 있음"),
+    (C_CYAN,   "암호화 트래픽 불가시성",
+     "TLS/HTTPS로 암호화된 트래픽의 내부 콘텐츠는 검사 불가 (메타데이터만 분석 가능)\n"
+     "DPI(Deep Packet Inspection)는 별도 프록시 또는 SSL Inspection 장비가 필요"),
+    (C_CYAN,   "가상화 / 컨테이너 환경",
+     "VM 마이그레이션이나 컨테이너 재시작 시 MAC 주소가 동적으로 변경될 수 있음\n"
+     "클라우드 환경에서는 CLOUD-NAC(SDP, Zero Trust Network Access) 별도 적용 필요"),
+]
+
+for i, (color, title, desc) in enumerate(limits):
+    row = i // 2
+    col = i % 2
+    x = 0.4 + col * 6.45
+    y = 1.72 + row * 1.73
+    add_rect(sl, x, y, 6.2, 1.58, fill=C_ACCENT)
+    add_rect(sl, x, y, 0.14, 1.58, fill=color)
+    add_text(sl, title, x + 0.28, y + 0.1, 5.8, 0.4,
+             size=14, bold=True, color=color)
+    add_text(sl, desc, x + 0.28, y + 0.52, 5.8, 0.98,
+             size=11, color=C_WHITE)
+
+note(sl, """[기술적 한계 — 약 2분 30초]
+
+NAC는 강력한 도구이지만 기술적 한계를 명확히 이해해야 합니다.
+
+가장 심각한 제약은 ARP 스푸핑 우회입니다.
+엔터프라이즈 스위치에서 DAI가 활성화되면 ARP 스푸핑이 스위치 레이어에서 차단됩니다.
+이 경우 VLAN 동적 변경이나 802.1x 포트 비활성화로 전환해야 합니다.
+
+MAC 스푸핑은 화이트리스트 기반 NAC의 근본적 약점입니다.
+이를 해결하려면 MAC 주소 외에 인증서 기반 EAP-TLS나 행동 기반 핑거프린팅을 사용해야 합니다.
+
+에이전트 삭제 문제는 중요한 Q&A 단골 질문입니다.
+에이전트를 삭제해도 enforcement의 ARP 스푸핑 차단은 계속 동작합니다.
+에이전트는 컴플라이언스 정보 수집 용도이고, 네트워크 차단은 별개로 동작합니다.""")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SLIDE 7 — NAC 주요 기능 명세 (NEW)
+# ══════════════════════════════════════════════════════════════════════════════
+sl = prs.slides.add_slide(BLANK)
+bg(sl)
+slide_header(sl, "NAC 주요 기능 명세", "LEntropy NAC가 제공하는 6대 기능", "07")
+
+features = [
+    ("🔍 단말 탐지 / 식별", C_CYAN, [
+        "ARP 브로드캐스트 수동 감청",
+        "DHCP Option 55 OS 핑거프린팅",
+        "MAC · IP · 호스트명 · OS 자동 수집",
+        "에이전트 없이도 즉시 탐지",
+    ]),
+    ("✅ 인증 관리", C_BLUE, [
+        "802.1x RADIUS (Auth + Acct)",
+        "Captive Portal 리다이렉션",
+        "LDAP/AD 계정 연동 (Mock→실제)",
+        "JWT 기반 관리자 API 인증",
+    ]),
+    ("🛡️ 정책 엔진", C_GREEN, [
+        "우선순위 기반 정책 평가",
+        "조건 조합 (AND / OR / NOT)",
+        "OS·장치유형·MAC·컴플라이언스 조건",
+        "정책 즉시 평가 API (/evaluate)",
+    ]),
+    ("🚫 접근 제어", C_ORANGE, [
+        "허용(Allow) / 차단(Block) / 격리(Quarantine)",
+        "ARP 스푸핑 기반 L2 소프트웨어 차단",
+        "VLAN 동적 분리 (Phase 2)",
+        "관리자 수동 제어 + 정책 자동 적용",
+    ]),
+    ("📊 컴플라이언스 검사", C_YELLOW, [
+        "endpoint-agent 상태 수집 (gRPC)",
+        "OS 버전 · 암호화 · 보안 패치 확인",
+        "컴플라이언스 위반 시 자동 격리",
+        "감사 로그에 검사 결과 기록",
+    ]),
+    ("📋 감사 로그", C_RED, [
+        "모든 접속 이벤트 자동 기록",
+        "정책 변경 이력 추적",
+        "시계열 조회 및 필터링",
+        "법적 증거 보존 (ISMS-P 대응)",
+    ]),
+]
+
+for i, (title, color, items) in enumerate(features):
+    row = i // 3
+    col = i % 3
+    x = 0.4 + col * 4.3
+    y = 1.72 + row * 2.65
+    add_rect(sl, x, y, 4.05, 2.48, fill=C_ACCENT)
+    add_rect(sl, x, y, 4.05, 0.48, fill=color)
+    add_text(sl, title, x + 0.12, y + 0.06, 3.82, 0.4,
+             size=14, bold=True, color=C_DARK)
+    body = "\n".join("  • " + it for it in items)
+    add_text(sl, body, x + 0.12, y + 0.55, 3.82, 1.85,
+             size=11.5, color=C_WHITE)
+
+note(sl, """[주요 기능 명세 — 약 2분]
+
+LEntropy NAC의 6대 핵심 기능을 설명합니다.
+
+단말 탐지/식별은 네트워크에 연결되는 순간 자동으로 동작합니다. 에이전트가 없어도 됩니다.
+
+인증 관리는 802.1x RADIUS와 LDAP를 지원합니다. 현재는 Mock LDAP이지만 LDAP_URL 환경변수만 설정하면 실제 AD와 연동됩니다.
+
+정책 엔진은 우선순위 기반입니다. 조건을 AND/OR/NOT으로 조합하여 복잡한 정책도 표현할 수 있습니다.
+
+접근 제어는 세 단계입니다. Allow는 정상 접속, Block은 완전 차단, Quarantine은 격리망으로 이동입니다.
+
+컴플라이언스는 에이전트가 설치된 경우에 활용됩니다. OS 버전, 암호화, 패치 상태를 주기적으로 체크합니다.
+
+감사 로그는 모든 이벤트를 자동 기록하여 법적 증거로 활용할 수 있습니다.""")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SLIDE 8 — 에이전트리스 vs 에이전트 방식
+# ══════════════════════════════════════════════════════════════════════════════
+sl = prs.slides.add_slide(BLANK)
+bg(sl)
+slide_header(sl, "두 가지 제어 방식", "에이전트리스 vs 에이전트 기반", "08")
+
 add_rect(sl, 0.4, 1.7, 5.9, 5.5, fill=C_ACCENT)
 add_rect(sl, 0.4, 1.7, 5.9, 0.55, fill=C_CYAN)
 add_text(sl, "에이전트리스 (Agentless)", 0.55, 1.73, 5.6, 0.48,
@@ -342,11 +488,9 @@ for line in lines_l:
              size=13, bold=bold, color=color)
     ty += 0.29
 
-# 가운데 VS
 add_text(sl, "VS", 6.4, 3.8, 0.5, 0.5,
          size=24, bold=True, color=C_YELLOW, align=PP_ALIGN.CENTER)
 
-# 오른쪽 에이전트 기반
 add_rect(sl, 7.0, 1.7, 5.9, 5.5, fill=C_ACCENT)
 add_rect(sl, 7.0, 1.7, 5.9, 0.55, fill=C_GREEN)
 add_text(sl, "에이전트 기반 (Agent)", 7.15, 1.73, 5.6, 0.48,
@@ -381,8 +525,6 @@ NAC는 두 가지 방식으로 동작합니다.
 에이전트리스 방식은 PC에 아무것도 설치하지 않습니다.
 네트워크 스위치에 흐르는 ARP, DHCP 패킷을 sensor 서비스가 수동으로 감청하여 장치를 탐지합니다.
 차단이 필요하면 enforcement 서비스가 ARP 스푸핑을 실행합니다.
-ARP 스푸핑이란, PC에게 '게이트웨이의 MAC 주소가 우리 서버입니다'라고 거짓 응답을 보내는 기법입니다.
-PC는 이후 인터넷으로 보내는 모든 패킷을 enforcement 서버에 보내게 되고, 서버는 이를 버립니다.
 
 에이전트 기반 방식은 PC에 endpoint-agent 프로그램을 설치합니다.
 에이전트는 30~60초마다 자신의 보안 상태를 gRPC로 서버에 보고합니다.
@@ -392,11 +534,11 @@ PC는 이후 인터넷으로 보내는 모든 패킷을 enforcement 서버에 �
 두 방식은 함께 사용할 수 있으며, 에이전트 설치 여부에 따라 얻을 수 있는 정보의 깊이가 달라집니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SLIDE 7 — 활용 방안 개요
+# SLIDE 9 — 활용 방안 개요
 # ══════════════════════════════════════════════════════════════════════════════
 sl = prs.slides.add_slide(BLANK)
 bg(sl)
-slide_header(sl, "NAC 활용 방안", "산업별 적용 시나리오", "07")
+slide_header(sl, "NAC 활용 방안", "산업별 적용 시나리오", "09")
 
 add_rect(sl, 0.4, 1.7, 12.5, 0.55, fill=C_BLUE)
 add_text(sl, "NAC는 네트워크가 존재하는 모든 환경에 적용 가능합니다",
@@ -431,11 +573,11 @@ NAC는 특정 산업에 국한되지 않고 네트워크가 있는 모든 환경
 공공기관은 법적 감사 요건을 충족하기 위한 접속 이력 보존에 활용합니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SLIDE 8 — 기업 환경 상세 시나리오
+# SLIDE 10 — 기업 환경 상세 시나리오
 # ══════════════════════════════════════════════════════════════════════════════
 sl = prs.slides.add_slide(BLANK)
 bg(sl)
-slide_header(sl, "활용 시나리오 — 기업 환경", "BYOD & 내부 보안 관리", "08")
+slide_header(sl, "활용 시나리오 — 기업 환경", "BYOD & 내부 보안 관리", "10")
 
 scenarios = [
     ("시나리오 1", "C_CYAN",  "BYOD 직원 스마트폰",
@@ -465,23 +607,82 @@ note(sl, """[기업 환경 시나리오 — 약 3분]
 
 실제 기업 환경에서 발생하는 4가지 대표 시나리오를 설명합니다.
 
-첫 번째, BYOD 직원 스마트폰입니다. 스마트폰이 Wi-Fi에 연결되면 캡티브 포털이 표시됩니다. 회사 계정으로 로그인하면 업무망에 접속되고, 그렇지 않으면 인터넷만 가능한 게스트 영역으로 격리됩니다.
+첫 번째, BYOD 직원 스마트폰입니다. 스마트폰이 Wi-Fi에 연결되면 캡티브 포털이 표시됩니다. 회사 계정으로 로그인하면 업무망에 접속되고, 그렇지 않으면 게스트 영역으로 격리됩니다.
 
-두 번째, 협력업체 방문자입니다. 방문자 노트북이 연결되면 화이트리스트를 확인합니다. 미등록 장치는 즉시 차단되고, 필요한 경우 임시 접속권을 발급할 수 있습니다.
+두 번째, 협력업체 방문자입니다. 방문자 노트북이 연결되면 화이트리스트를 확인합니다. 미등록 장치는 즉시 차단됩니다.
 
-세 번째, 퇴직자 장치 접속입니다. 퇴직자의 AD 계정이 비활성화되면 RADIUS 인증이 거부됩니다. 이전에 등록된 MAC 주소도 정책에 의해 차단됩니다.
+세 번째, 퇴직자 장치 접속입니다. 퇴직자의 AD 계정이 비활성화되면 RADIUS 인증이 거부됩니다.
 
 네 번째, 악성코드 감염 PC입니다. endpoint-agent가 이상 징후를 감지하여 서버에 보고하면, policy-manager가 해당 장치를 즉시 격리합니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SLIDE 9 — 개발 아키텍처 개요
+# SLIDE 11 — 상용 솔루션 비교 (NEW)
 # ══════════════════════════════════════════════════════════════════════════════
 sl = prs.slides.add_slide(BLANK)
 bg(sl)
-slide_header(sl, "개발 개요 — 시스템 아키텍처", "LEntropy NAC Platform v0.1", "09")
+slide_header(sl, "상용 NAC 솔루션 비교", "주요 제품 특장점 및 LEntropy 포지셔닝", "11")
 
-# 아키텍처 다이어그램을 박스+화살표로 표현
-# 상단: 외부 접점
+# 헤더 행
+headers = ["항목", "Cisco ISE", "Aruba\nClearPass", "FortiNAC", "Forescout", "LEntropy\n(본 프로젝트)"]
+col_w = [1.8, 2.05, 2.05, 2.05, 2.05, 2.4]
+col_x = [0.4]
+for w in col_w[:-1]:
+    col_x.append(col_x[-1] + w + 0.04)
+
+header_colors = [C_BLUE, RGBColor(0x00, 0x6E, 0xC6), RGBColor(0xFF, 0x87, 0x00),
+                 RGBColor(0xEE, 0x3A, 0x2D), RGBColor(0x00, 0x7C, 0x89), C_GREEN]
+
+for j, (hdr, x, w, hc) in enumerate(zip(headers, col_x, col_w, header_colors)):
+    add_rect(sl, x, 1.72, w, 0.6, fill=hc)
+    add_text(sl, hdr, x + 0.05, 1.74, w - 0.1, 0.56,
+             size=11, bold=True, color=C_WHITE, align=PP_ALIGN.CENTER)
+
+# 데이터 행
+rows = [
+    ("가격",        ["$$$$\n(라이선스)", "$$$\n(구독)", "$$$\n(라이선스)", "$$$\n(구독)", "무료\n(오픈소스)"]),
+    ("배포 형태",   ["어플라이언스\n/VM", "어플라이언스\n/VM", "VM\n/클라우드", "VM\n/클라우드", "컨테이너\n(Docker/K8s)"]),
+    ("에이전트",    ["선택 (AnyConnect)", "선택 (OnGuard)", "선택 (FortiClient)", "에이전트리스\n특화", "이중 방식\n(선택+리스)"]),
+    ("802.1x",     ["완전 지원", "완전 지원", "완전 지원", "부분 지원", "기본 지원\n(RADIUS)"]),
+    ("VLAN 제어",   ["완전 지원", "완전 지원", "완전 지원", "완전 지원", "예정\n(Phase 2)"]),
+    ("AI/이상탐지", ["Cisco AI\n(일부)", "ClearPass\nPolicy (일부)", "FortiAI\n연동", "eyeSegment\n(고급)", "예정\n(Phase 3)"]),
+    ("특장점",      ["Cisco 에코시스템\n완벽 통합", "대규모 Wi-Fi\n환경 특화", "FortiGate\n방화벽 연동", "에이전트리스\n강점", "경량·오픈소스\n즉시 배포"]),
+]
+
+row_colors = [C_ACCENT, RGBColor(0x12, 0x1A, 0x30)]
+for r_idx, (label, values) in enumerate(rows):
+    y = 2.38 + r_idx * 0.7
+    rc = row_colors[r_idx % 2]
+    add_rect(sl, col_x[0], y, col_w[0], 0.65, fill=C_BLUE)
+    add_text(sl, label, col_x[0] + 0.05, y + 0.08, col_w[0] - 0.1, 0.5,
+             size=11, bold=True, color=C_WHITE, align=PP_ALIGN.CENTER)
+    for j, (val, cx, cw) in enumerate(zip(values, col_x[1:], col_w[1:])):
+        add_rect(sl, cx, y, cw, 0.65, fill=rc)
+        tcol = C_GREEN if j == 4 else C_LGRAY
+        add_text(sl, val, cx + 0.05, y + 0.05, cw - 0.1, 0.58,
+                 size=10, color=tcol, align=PP_ALIGN.CENTER)
+
+note(sl, """[상용 솔루션 비교 — 약 2분 30초]
+
+주요 상용 NAC 솔루션과 LEntropy를 비교합니다.
+
+Cisco ISE는 가장 완성도 높은 솔루션이지만 가격이 매우 높고, Cisco 인프라가 이미 갖춰진 환경에 최적화되어 있습니다.
+
+Aruba ClearPass는 HPE Aruba Wi-Fi 장비와의 통합에 특화되어 있어 대규모 캠퍼스 환경에 주로 사용됩니다.
+
+FortiNAC는 Fortinet 보안 패브릭과 연동이 탁월하여 FortiGate 방화벽을 사용하는 환경에 적합합니다.
+
+Forescout은 에이전트리스 방식의 강자로, 에이전트 설치가 어려운 OT/IoT 환경에서 강점을 보입니다.
+
+LEntropy는 오픈소스 경량 솔루션으로, 도커 컨테이너 한 명령으로 즉시 배포 가능하고 이중 제어 방식을 모두 지원합니다.
+VLAN 동적 제어와 AI 이상탐지는 로드맵에 포함되어 있습니다.""")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SLIDE 12 — 개발 아키텍처 개요
+# ══════════════════════════════════════════════════════════════════════════════
+sl = prs.slides.add_slide(BLANK)
+bg(sl)
+slide_header(sl, "개발 개요 — 시스템 아키텍처", "LEntropy NAC Platform v0.1", "12")
+
 add_rect(sl, 0.4,  1.75, 2.4, 0.7, fill=C_BLUE)
 add_text(sl, "🌐 Wi-Fi / 유선\n스위치", 0.45, 1.78, 2.3, 0.65,
          size=12, color=C_WHITE, align=PP_ALIGN.CENTER)
@@ -494,12 +695,10 @@ add_rect(sl, 6.0,  1.75, 2.4, 0.7, fill=C_BLUE)
 add_text(sl, "🔧 관리자\n브라우저", 6.05, 1.78, 2.3, 0.65,
          size=12, color=C_WHITE, align=PP_ALIGN.CENTER)
 
-# 화살표 텍스트
 add_text(sl, "RADIUS\n802.1x", 0.6, 2.55, 2.0, 0.5, size=10, color=C_LGRAY, align=PP_ALIGN.CENTER)
 add_text(sl, "gRPC", 3.55, 2.55, 1.7, 0.3, size=10, color=C_LGRAY, align=PP_ALIGN.CENTER)
 add_text(sl, "HTTPS", 6.25, 2.55, 1.9, 0.3, size=10, color=C_LGRAY, align=PP_ALIGN.CENTER)
 
-# 서비스 레이어
 services = [
     ("aaa\n:8080/:1812/:1813", C_CYAN,   0.4,  3.1),
     ("agent-gateway\n:50051 (gRPC)",    C_GREEN, 3.1,  3.1),
@@ -512,17 +711,14 @@ for label, color, x, y in services:
     add_text(sl, label, x + 0.1, y + 0.14, 2.3, 0.7,
              size=12, color=C_WHITE, align=PP_ALIGN.CENTER)
 
-# 가운데: policy-manager (핵심)
 add_rect(sl, 4.4, 4.2, 4.5, 0.95, fill=C_BLUE)
 add_text(sl, "🎯 policy-manager  :8001\nPostgreSQL · Redis · Audit Log", 4.5, 4.22, 4.3, 0.9,
          size=13, bold=True, color=C_WHITE, align=PP_ALIGN.CENTER)
 
-# NATS
 add_rect(sl, 0.4, 4.2, 3.7, 0.95, fill=RGBColor(0x2D, 0x2D, 0x44))
 add_text(sl, "📨 NATS 이벤트 버스\nnac.events.* / nac.commands.*", 0.5, 4.22, 3.5, 0.9,
          size=12, color=C_CYAN, align=PP_ALIGN.CENTER)
 
-# 하단: sensor / enforcement / dhcp
 bottom = [
     ("sensor\nDaemonSet", C_CYAN,   0.4,  5.45),
     ("enforcement\nDaemonSet",     C_RED,    3.1,  5.45),
@@ -535,7 +731,6 @@ for label, color, x, y in bottom:
     add_text(sl, label, x + 0.2, y + 0.1, 2.2, 0.65,
              size=12, color=C_WHITE, align=PP_ALIGN.CENTER)
 
-# 하단 인프라
 add_rect(sl, 0.4, 6.5, 12.5, 0.65, fill=RGBColor(0x0A, 0x1A, 0x3A))
 add_text(sl, "공통 인프라:  PostgreSQL :5432   Redis :6379   NATS :4222",
          0.6, 6.55, 12.1, 0.55,
@@ -544,7 +739,6 @@ add_text(sl, "공통 인프라:  PostgreSQL :5432   Redis :6379   NATS :4222",
 note(sl, """[아키텍처 개요 — 약 3분]
 
 이것이 LEntropy NAC 플랫폼의 전체 아키텍처입니다.
-
 크게 세 층으로 구성됩니다.
 
 상단은 외부 접점입니다. Wi-Fi/스위치는 RADIUS로, PC 에이전트는 gRPC로, 관리자 브라우저는 HTTPS로 플랫폼에 연결됩니다.
@@ -556,11 +750,11 @@ note(sl, """[아키텍처 개요 — 약 3분]
 이 모든 서비스가 NATS 이벤트 버스를 통해 비동기적으로 통신합니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SLIDE 10 — 기술 스택
+# SLIDE 13 — 기술 스택
 # ══════════════════════════════════════════════════════════════════════════════
 sl = prs.slides.add_slide(BLANK)
 bg(sl)
-slide_header(sl, "기술 스택", "선택 이유와 역할", "10")
+slide_header(sl, "기술 스택", "선택 이유와 역할", "13")
 
 stacks = [
     ("⚙️  Backend — Rust", C_ORANGE,
@@ -587,7 +781,7 @@ for i, (title, color, body) in enumerate(stacks):
 
 note(sl, """[기술 스택 — 약 2분]
 
-백엔드는 Rust로 작성되었습니다. Rust를 선택한 이유는 네트워크 패킷 처리, ARP 스푸핑 같은 시스템 레벨 작업에 C 수준의 성능이 필요하면서도, 메모리 안전성을 컴파일러가 보장해주기 때문입니다.
+백엔드는 Rust로 작성되었습니다. 네트워크 패킷 처리, ARP 스푸핑 같은 시스템 레벨 작업에 C 수준의 성능이 필요하면서도, 메모리 안전성을 컴파일러가 보장해주기 때문입니다.
 
 프론트엔드는 React와 TypeScript로 개발했습니다. 관리자가 실시간으로 단말 상태를 모니터링하고 정책을 변경할 수 있는 SPA입니다.
 
@@ -596,11 +790,11 @@ note(sl, """[기술 스택 — 약 2분]
 배포는 로컬 개발 환경은 Docker Compose, 프로덕션은 Kubernetes Helm 차트로 패키징되어 있습니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SLIDE 11 — 구현 현황 (컴포넌트별)
+# SLIDE 14 — 구현 현황 (컴포넌트별)
 # ══════════════════════════════════════════════════════════════════════════════
 sl = prs.slides.add_slide(BLANK)
 bg(sl)
-slide_header(sl, "구현 현황", "컴포넌트별 완성도", "11")
+slide_header(sl, "구현 현황", "컴포넌트별 완성도", "14")
 
 components = [
     ("policy-manager",  "핵심 정책 엔진 + REST API + DB",     "완료", C_GREEN),
@@ -617,7 +811,6 @@ components = [
     ("LDAP 연동",        "AD 계정 실제 연동",                    "Mock 구현\n(설정으로 활성화)", C_ORANGE),
 ]
 
-# 헤더
 add_rect(sl, 0.4, 1.72, 5.5, 0.38, fill=C_BLUE)
 add_text(sl, "컴포넌트", 0.55, 1.74, 5.3, 0.34,
          size=13, bold=True, color=C_WHITE)
@@ -653,11 +846,11 @@ EAP-TLS/PEAP는 802.1x의 전체 TLS 핸드셰이크 구조는 작성되었지�
 LDAP 연동은 Mock 모드로 구현되어 있어, 환경변수에 LDAP_URL을 설정하면 실제 AD와 연동됩니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SLIDE 12 — 주요 기능 데모 시나리오
+# SLIDE 15 — 주요 기능 데모 시나리오
 # ══════════════════════════════════════════════════════════════════════════════
 sl = prs.slides.add_slide(BLANK)
 bg(sl)
-slide_header(sl, "데모 시나리오", "Ubuntu 서버 + Windows 10 클라이언트", "12")
+slide_header(sl, "데모 시나리오", "Ubuntu 서버 + Windows 10 클라이언트", "15")
 
 steps_demo = [
     ("STEP 1", C_CYAN,   "서버 기동",
@@ -666,8 +859,8 @@ steps_demo = [
      "브라우저 → http://<서버IP>:3000\nadmin / changeme 로그인 → JWT 발급 → 대시보드 이동"),
     ("STEP 3", C_GREEN,  "Windows 에이전트 실행",
      "endpoint-agent.exe 실행 (PowerShell)\n30초 후 Endpoints 목록에 DESKTOP-xxx 자동 등록"),
-    ("STEP 4", C_ORANGE, "단말 제어",
-     "Allow → Block → Quarantine 버튼 클릭\n감사 로그에 모든 변경 이력 자동 기록"),
+    ("STEP 4", C_ORANGE, "단말 제어 & 정책 평가",
+     "Allow → Block → Quarantine 버튼 클릭\n정책 평가 실행 → 전체 단말 일괄 정책 적용 · 감사 로그 기록"),
     ("STEP 5", C_RED,    "RADIUS 인증 테스트",
      "radtest admin changeme localhost 0 radius-shared-secret\nAccess-Accept 응답 확인"),
 ]
@@ -687,22 +880,17 @@ note(sl, """[데모 시나리오 — 약 4분]
 실제 테스트는 이 5단계로 진행됩니다.
 
 1단계: docker compose up -d 명령 한 번으로 8개 서비스가 자동으로 시작됩니다.
-PostgreSQL, Redis, NATS 인프라가 먼저 기동되고, 헬스체크가 통과되면 앱 서비스들이 순차적으로 시작됩니다.
-
-2단계: 브라우저에서 Admin Console에 접속합니다. 로그인하면 JWT 토큰이 발급되어 이후 모든 API 호출에 자동으로 포함됩니다.
-
-3단계: Windows PC에서 endpoint-agent.exe를 실행합니다. 30초 후 서버의 Endpoints 목록에 해당 PC가 자동으로 등록됩니다.
-
-4단계: 관리자가 단말을 허용, 차단, 격리 상태로 변경할 수 있습니다. 모든 조작은 감사 로그에 자동 기록됩니다.
-
-5단계: radtest 명령으로 RADIUS 인증을 테스트합니다. Access-Accept 응답이 오면 정상입니다.""")
+2단계: 브라우저에서 Admin Console에 접속합니다. 로그인하면 JWT 토큰이 발급됩니다.
+3단계: Windows PC에서 endpoint-agent.exe를 실행합니다. 30초 후 Endpoints 목록에 해당 PC가 자동으로 등록됩니다.
+4단계: 관리자가 단말을 허용, 차단, 격리 상태로 변경하거나 정책 평가를 실행하여 전체 단말에 일괄 정책을 적용합니다.
+5단계: radtest 명령으로 RADIUS 인증을 테스트합니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SLIDE 13 — 보안 고려사항
+# SLIDE 16 — 보안 고려사항
 # ══════════════════════════════════════════════════════════════════════════════
 sl = prs.slides.add_slide(BLANK)
 bg(sl)
-slide_header(sl, "보안 고려사항", "프로덕션 적용 전 필수 체크", "13")
+slide_header(sl, "보안 고려사항", "프로덕션 적용 전 필수 체크", "16")
 
 checks = [
     (C_RED,    "🔑 JWT_SECRET", "기본값 'change-me...' → 최소 32자 무작위 문자열 교체 필수"),
@@ -741,11 +929,11 @@ PostgreSQL 비밀번호 강화, TLS 인증서 적용, RADIUS 포트 방화벽 �
 sensor와 enforcement는 raw socket을 사용하므로 NET_RAW 권한이 필요하고, 보안상 전용 노드에 격리하는 것이 권장됩니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SLIDE 14 — 향후 로드맵
+# SLIDE 17 — 향후 로드맵
 # ══════════════════════════════════════════════════════════════════════════════
 sl = prs.slides.add_slide(BLANK)
 bg(sl)
-slide_header(sl, "향후 로드맵", "단계별 발전 계획", "14")
+slide_header(sl, "향후 로드맵", "단계별 발전 계획", "17")
 
 phases = [
     ("Phase 1\n(1~2개월)", C_CYAN, [
@@ -784,18 +972,16 @@ note(sl, """[향후 로드맵 — 약 2분]
 
 개발 로드맵은 3단계로 구성됩니다.
 
-Phase 1은 현재 부분 구현된 기능을 완성하는 단계입니다. EAP-TLS 완전 구현과 LDAP 연동 검증, 그리고 에이전트를 Windows 서비스로 설치할 수 있는 패키지를 만들 계획입니다.
-
-Phase 2는 엔터프라이즈 기능 확장입니다. VLAN 동적 할당으로 격리 수준을 높이고, CVE 피드와 연동하여 패치되지 않은 취약점을 가진 장치를 자동으로 탐지합니다. macOS 에이전트도 지원할 예정입니다.
-
-Phase 3는 지능화 단계입니다. 기계학습 모델로 네트워크 이상 행위를 탐지하고, SOC/SIEM 시스템과 연동하여 기업 보안 운영 센터에 통합합니다.""")
+Phase 1은 현재 부분 구현된 기능을 완성하는 단계입니다.
+Phase 2는 엔터프라이즈 기능 확장입니다. VLAN 동적 할당과 CVE 피드 연동이 포함됩니다.
+Phase 3는 지능화 단계입니다. 기계학습 모델로 네트워크 이상 행위를 탐지하고 SIEM과 연동합니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SLIDE 15 — 핵심 가치 요약
+# SLIDE 18 — 핵심 가치 요약
 # ══════════════════════════════════════════════════════════════════════════════
 sl = prs.slides.add_slide(BLANK)
 bg(sl)
-slide_header(sl, "핵심 가치 요약", "LEntropy NAC Platform이 제공하는 것", "15")
+slide_header(sl, "핵심 가치 요약", "LEntropy NAC Platform이 제공하는 것", "18")
 
 values = [
     ("🚀 즉시 배포 가능",
@@ -835,7 +1021,7 @@ LEntropy NAC Platform의 핵심 가치 여섯 가지를 정리하겠습니다.
 여섯째, 표준 프로토콜을 사용합니다. 기존 Wi-Fi AP나 스위치와 바로 연동됩니다.""")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SLIDE 16 — Q&A
+# SLIDE 19 — Q&A
 # ══════════════════════════════════════════════════════════════════════════════
 sl = prs.slides.add_slide(BLANK)
 bg(sl)
@@ -872,22 +1058,23 @@ note(sl, """[Q&A — 약 5분]
 
 발표를 들어주셔서 감사합니다.
 
-지금까지 NAC의 개념, 동작 원리, 산업별 활용 방안, 그리고 LEntropy NAC 플랫폼의 실제 구현 내용을 설명드렸습니다.
+지금까지 NAC의 개념, 필요성/배경, 동작 원리, 기술적 한계, 주요 기능 명세, 상용 솔루션 비교,
+그리고 LEntropy NAC 플랫폼의 실제 구현 내용을 설명드렸습니다.
 
-주요 내용을 정리하면:
-- NAC는 네트워크의 모든 장치를 식별·인증·제어하는 보안 프레임워크입니다.
-- 에이전트리스와 에이전트 방식을 모두 지원합니다.
-- Rust로 개발된 10개 서비스가 NATS 이벤트 버스로 연결됩니다.
-- Docker Compose로 즉시 배포, Kubernetes로 프로덕션 운영이 가능합니다.
-
-궁금하신 점이 있으시면 질문해 주시기 바랍니다.
-
-[일반적으로 받는 질문 예시]
-Q: ARP 스푸핑이 스위치 포트 보안(Dynamic ARP Inspection)에 의해 막히지 않나요?
-A: 맞습니다. 엔터프라이즈 스위치에서 DAI가 활성화되어 있으면 ARP 스푸핑이 차단됩니다. 이 경우 VLAN 변경이나 802.1x 포트 비활성화를 사용해야 합니다. 저희 플랫폼은 향후 VLAN 동적 제어를 Phase 2 로드맵에 포함하고 있습니다.
+[예상 Q&A]
+Q: ARP 스푸핑이 스위치 DAI에 의해 막히지 않나요?
+A: 맞습니다. 엔터프라이즈 스위치에서 DAI가 활성화되어 있으면 ARP 스푸핑이 차단됩니다.
+   이 경우 VLAN 변경이나 802.1x 포트 비활성화를 사용해야 합니다.
+   VLAN 동적 제어는 Phase 2 로드맵에 포함되어 있습니다.
 
 Q: endpoint-agent가 삭제되면 차단을 우회할 수 있지 않나요?
-A: 에이전트 기반 제어는 컴플라이언스 검사 용도가 주 목적입니다. 실제 네트워크 차단은 에이전트와 무관하게 enforcement 서비스가 ARP 스푸핑으로 수행하므로, 에이전트를 삭제해도 네트워크 레벨 차단은 계속 동작합니다.""")
+A: 에이전트 기반 제어는 컴플라이언스 검사 용도가 주 목적입니다.
+   실제 네트워크 차단은 에이전트와 무관하게 enforcement 서비스가 ARP 스푸핑으로 수행하므로,
+   에이전트를 삭제해도 네트워크 레벨 차단은 계속 동작합니다.
+
+Q: 상용 솔루션 대비 LEntropy의 장점은?
+A: 오픈소스 무료, 컨테이너 즉시 배포, 이중 제어 방식(에이전트리스+에이전트) 동시 지원이 차별점입니다.
+   상용 솔루션은 수천만 원 이상의 라이선스 비용이 필요합니다.""")
 
 # ── 저장 ──────────────────────────────────────────────────────────────────────
 out = "/home/user/LEntropy/docs/NAC_플랫폼_발표자료.pptx"

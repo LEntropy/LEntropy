@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::AppState;
+
 /// GET /api/v1/endpoints 쿼리 파라미터
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
@@ -87,17 +89,17 @@ pub async fn get_endpoint_by_mac(
 // ── 상태 변경 헬퍼 ────────────────────────────────────────────────────────
 
 async fn update_endpoint_status(
-    pool: &PgPool,
+    state: &AppState,
     id: Uuid,
     status: &str,
     event_type: &str,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let repo = EndpointRepo::new(pool);
+    let repo = EndpointRepo::new(&state.pool);
     match repo.find_by_id(id).await? {
         None => Err(AppError::NotFound(format!("endpoint {id} not found"))),
-        Some(_) => {
+        Some(ep) => {
             repo.set_status(id, status).await?;
-            let audit = AuditRepo::new(pool);
+            let audit = AuditRepo::new(&state.pool);
             audit
                 .log(
                     event_type,
@@ -106,8 +108,34 @@ async fn update_endpoint_status(
                     serde_json::json!({ "status": status }),
                 )
                 .await?;
+
+            // enforcement NATS 명령 발행
+            let ip = ep
+                .ip_address
+                .as_deref()
+                .unwrap_or("")
+                .split('/')
+                .next()
+                .unwrap_or("")
+                .to_string();
+            let cmd = serde_json::json!({
+                "mac_address": ep.mac_address,
+                "ip_address": ip,
+                "action": status,
+                "gateway_ip": "",
+                "gateway_mac": null,
+                "vlan_id": null,
+            });
+            if let Ok(payload) = serde_json::to_vec(&cmd) {
+                state
+                    .nats
+                    .publish("nac.commands.enforcement", payload.into())
+                    .await
+                    .ok();
+            }
+
             match repo.find_by_id(id).await? {
-                Some(ep) => Ok(Json(serde_json::to_value(ep)?)),
+                Some(updated) => Ok(Json(serde_json::to_value(updated)?)),
                 None => Err(AppError::NotFound(format!("endpoint {id} not found"))),
             }
         }
@@ -116,26 +144,26 @@ async fn update_endpoint_status(
 
 /// POST /api/v1/endpoints/:id/allow
 pub async fn allow_endpoint(
-    State(pool): State<PgPool>,
+    State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    update_endpoint_status(&pool, id, "allowed", "endpoint_allowed").await
+    update_endpoint_status(&state, id, "allowed", "endpoint_allowed").await
 }
 
 /// POST /api/v1/endpoints/:id/block
 pub async fn block_endpoint(
-    State(pool): State<PgPool>,
+    State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    update_endpoint_status(&pool, id, "denied", "endpoint_blocked").await
+    update_endpoint_status(&state, id, "denied", "endpoint_blocked").await
 }
 
 /// POST /api/v1/endpoints/:id/quarantine
 pub async fn quarantine_endpoint(
-    State(pool): State<PgPool>,
+    State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    update_endpoint_status(&pool, id, "quarantined", "endpoint_quarantined").await
+    update_endpoint_status(&state, id, "quarantined", "endpoint_quarantined").await
 }
 
 /// POST /api/v1/endpoints/:id/policy — 수동 정책 할당 (policy_id: null 이면 해제)

@@ -210,6 +210,8 @@ fn map_action(action: &str) -> NacAction {
 }
 
 /// allow 명령 처리 (별도 — state에서 제거 + ARP 복구)
+///
+/// QuarantineEntry가 없어도 (컨테이너 재시작 등) cmd 필드에서 복구 정보를 추출한다.
 pub fn execute_allow(
     cmd: &EnforcementCommand,
     spoofer: &Arc<Mutex<Option<Spoofer>>>,
@@ -228,24 +230,43 @@ pub fn execute_allow(
         .unwrap()
         .remove(&cmd.mac_address.to_lowercase());
 
-    if let Some(entry) = entry {
+    // victim_mac / victim_ip: state entry 우선, 없으면 cmd에서 파싱 (재시작 후 복구 대응)
+    let victim_mac = entry
+        .as_ref()
+        .map(|e| e.victim_mac)
+        .or_else(|| parse_mac(&cmd.mac_address));
+
+    let victim_ip = entry
+        .as_ref()
+        .map(|e| e.victim_ip)
+        .or_else(|| Ipv4Addr::from_str(&cmd.ip_address).ok());
+
+    if let (Some(victim_mac), Some(victim_ip)) = (victim_mac, victim_ip) {
+        let gateway_ip = entry
+            .as_ref()
+            .map(|e| e.gateway_ip)
+            .or_else(detect_default_gateway)
+            .unwrap_or(Ipv4Addr::new(0, 0, 0, 0));
+
         let gateway_mac = cmd
             .gateway_mac
             .as_deref()
             .and_then(parse_mac)
-            .or_else(|| get_arp_mac(entry.gateway_ip))
+            .or_else(|| get_arp_mac(gateway_ip))
             .unwrap_or([0xff; 6]);
 
         let mut guard = spoofer.lock().unwrap();
         if let Some(s) = guard.as_mut() {
-            s.allow(
-                entry.victim_ip,
-                entry.victim_mac,
-                entry.gateway_ip,
-                gateway_mac,
-            )?;
-            info!(mac = %cmd.mac_address, ip = %entry.victim_ip, "ARP restore sent (allowed)");
+            s.allow(victim_ip, victim_mac, gateway_ip, gateway_mac)?;
+            info!(
+                mac = %cmd.mac_address,
+                ip  = %victim_ip,
+                had_state = entry.is_some(),
+                "ARP restore sent (allowed)"
+            );
         }
+    } else {
+        debug!(mac = %cmd.mac_address, "allow: no IP/MAC info — ARP restore skipped");
     }
 
     Ok(())
@@ -261,10 +282,17 @@ pub fn detect_default_gateway() -> Option<Ipv4Addr> {
         if parts.len() < 3 {
             continue;
         }
-        let dest = u32::from_str_radix(parts[1], 16).ok()?;
+        // 파싱 실패 시 해당 줄만 건너뜀 (? 대신 continue)
+        let dest = match u32::from_str_radix(parts[1], 16) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
         if dest == 0 {
-            // 기본 경로
-            let gw_hex = u32::from_str_radix(parts[2], 16).ok()?;
+            // 기본 경로 (Destination == 0.0.0.0)
+            let gw_hex = match u32::from_str_radix(parts[2], 16) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
             let gw_bytes = gw_hex.to_le_bytes(); // little-endian
             return Some(Ipv4Addr::from(gw_bytes));
         }

@@ -1,7 +1,7 @@
 //! ARP spoofing / enforcement implementation using pnet datalink.
 
 use anyhow::{bail, Context, Result};
-use nac_netproto::arp::craft_arp_reply;
+use nac_netproto::arp::{craft_arp_reply, craft_gratuitous_arp};
 use pnet::datalink::{self, Channel, DataLinkSender};
 use std::net::Ipv4Addr;
 use tracing::debug;
@@ -110,7 +110,11 @@ impl Spoofer {
         Ok(())
     }
 
-    /// ARP 복구: 올바른 게이트웨이 MAC으로 ARP 전송
+    /// ARP 복구: 피해자 + 네트워크 전체 ARP 캐시 정상화
+    ///
+    /// 1. 피해자에게 unicast: "gateway_ip는 gateway_mac에 있다" (ARP MITM 복구)
+    /// 2. 브로드캐스트 gratuitous ARP: "victim_ip는 victim_mac에 있다"
+    ///    → 공유기·스위치 등 모든 기기의 오염된 ARP 캐시 복구
     pub fn allow(
         &mut self,
         victim_ip: Ipv4Addr,
@@ -118,15 +122,23 @@ impl Spoofer {
         gateway_ip: Ipv4Addr,
         gateway_mac: [u8; 6],
     ) -> Result<()> {
-        // 피해자에게 올바른 게이트웨이 MAC 전송
-        let frame = craft_arp_reply(victim_mac, gateway_mac, gateway_ip, victim_mac, victim_ip)?;
-        self.send_frame(&frame)?;
+        // 1. 피해자에게 올바른 게이트웨이 MAC 전송 (ARP MITM 복구)
+        let frame_to_victim =
+            craft_arp_reply(victim_mac, gateway_mac, gateway_ip, victim_mac, victim_ip)?;
+        self.send_frame(&frame_to_victim)?;
+
+        // 2. 네트워크 브로드캐스트: victim_ip → victim_mac 임을 알림
+        //    공유기가 "victim_ip = Pi의 MAC"으로 잘못 기억하고 있는 것을 바로잡는다.
+        //    SHA=victim_mac, SPA=victim_ip 로 spoofing하여 모든 기기 ARP 갱신.
+        let corrective = craft_gratuitous_arp(victim_mac, victim_ip, victim_ip)?;
+        self.send_frame(&corrective)?;
 
         debug!(
             iface = %self.iface_name,
             victim_ip = %victim_ip,
+            victim_mac = ?victim_mac,
             gateway_ip = %gateway_ip,
-            "sent ARP restore to victim"
+            "sent ARP restore: victim unicast + broadcast gratuitous"
         );
 
         Ok(())

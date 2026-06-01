@@ -7,11 +7,12 @@
 //!   GET  /denied   → denied page
 //!   GET  /health   → {"status":"ok"}
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_nats::Client as NatsClient;
 use axum::{
-    extract::{Query, State},
+    extract::{ConnectInfo, Query, State},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Form, Router,
@@ -19,6 +20,7 @@ use axum::{
 use nac_auth::{jwt::sign_token, LdapClient, NacClaims};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sqlx::PgPool;
 use time::OffsetDateTime;
 use tracing::{error, info, warn};
 
@@ -28,6 +30,7 @@ pub struct PortalState {
     pub ldap: Option<LdapClient>,
     pub nats: NatsClient,
     pub jwt_secret: Vec<u8>,
+    pub pool: PgPool,
     /// MAC address of the endpoint making the request (if known from query param)
     pub default_mac: Option<String>,
 }
@@ -38,11 +41,13 @@ pub type SharedState = Arc<PortalState>;
 
 pub fn router(state: SharedState) -> Router {
     Router::new()
-        .route("/", get(login_page))
+        .route("/", get(landing_page))
         .route("/login", post(handle_login))
         .route("/success", get(success_page))
         .route("/denied", get(denied_page))
+        .route("/blocked", get(blocked_page))
         .route("/health", get(health))
+        .fallback(catch_all)
         .with_state(state)
 }
 
@@ -52,8 +57,56 @@ async fn health() -> impl IntoResponse {
     axum::Json(json!({"status": "ok"}))
 }
 
-async fn login_page() -> Html<&'static str> {
-    Html(LOGIN_HTML)
+/// DB에서 IP로 엔드포인트 상태 조회
+async fn endpoint_status(pool: &PgPool, ip: &str) -> Option<String> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT status FROM endpoints WHERE ip_address = $1 OR ip_address = $2 LIMIT 1",
+    )
+    .bind(format!("{ip}/32"))
+    .bind(ip)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
+/// GET / — 클라이언트 IP로 상태 확인 후 적절한 페이지 표시
+async fn landing_page(
+    State(state): State<SharedState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    let ip = addr.ip().to_string();
+    match endpoint_status(&state.pool, &ip).await.as_deref() {
+        Some("denied") => {
+            info!(ip, "blocked endpoint accessed captive portal");
+            Html(BLOCKED_HTML).into_response()
+        }
+        Some("quarantined") => {
+            info!(ip, "quarantined endpoint accessing captive portal");
+            Html(LOGIN_HTML).into_response()
+        }
+        status => {
+            // 상태 미확인이거나 이미 allowed → 로그인 페이지 표시
+            info!(ip, ?status, "captive portal access");
+            Html(LOGIN_HTML).into_response()
+        }
+    }
+}
+
+/// fallback — 포트 80에서 DNAT로 넘어온 임의 경로 처리
+async fn catch_all(
+    State(state): State<SharedState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    let ip = addr.ip().to_string();
+    match endpoint_status(&state.pool, &ip).await.as_deref() {
+        Some("denied") => Redirect::to("/blocked").into_response(),
+        _ => Redirect::to("/").into_response(),
+    }
+}
+
+async fn blocked_page() -> Html<&'static str> {
+    Html(BLOCKED_HTML)
 }
 
 #[derive(Debug, Deserialize)]
@@ -340,6 +393,62 @@ static DENIED_HTML: &str = r##"<!DOCTYPE html>
   <p>사용자명 또는 비밀번호가 올바르지 않습니다.</p>
   <a href="/">다시 시도</a>
   <div class="reason">사유: {{REASON}}</div>
+</div>
+</body>
+</html>"##;
+
+static BLOCKED_HTML: &str = r##"<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>네트워크 접근 차단됨</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #fef2f2;
+    display: flex; align-items: center; justify-content: center; min-height: 100vh;
+  }
+  .container {
+    background: #fff; border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0,0,0,.12);
+    padding: 48px 40px; width: 100%; max-width: 480px; text-align: center;
+  }
+  .icon { font-size: 72px; margin-bottom: 24px; }
+  h1 { font-size: 24px; font-weight: 700; color: #dc2626; margin-bottom: 12px; }
+  .subtitle { font-size: 15px; color: #666; margin-bottom: 28px; line-height: 1.6; }
+  .info-box {
+    background: #fef2f2; border: 1px solid #fecaca;
+    border-radius: 8px; padding: 16px 20px;
+    text-align: left; margin-bottom: 24px;
+  }
+  .info-box p { font-size: 13px; color: #7f1d1d; margin-bottom: 6px; }
+  .info-box p:last-child { margin-bottom: 0; }
+  .info-box strong { color: #dc2626; }
+  .contact {
+    font-size: 13px; color: #888;
+    padding-top: 20px; border-top: 1px solid #f3f4f6;
+  }
+  .contact a { color: #4f46e5; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="icon">🚫</div>
+  <h1>네트워크 접근이 차단되었습니다</h1>
+  <p class="subtitle">
+    귀하의 단말은 보안 정책에 의해<br>네트워크 접근이 제한된 상태입니다.
+  </p>
+  <div class="info-box">
+    <p>⚠️ <strong>차단 사유:</strong> 보안 정책 위반 또는 관리자 설정</p>
+    <p>📋 <strong>현재 상태:</strong> 인터넷 및 내부망 접근 불가</p>
+    <p>🔒 <strong>조치:</strong> 네트워크 관리자에게 문의하세요</p>
+  </div>
+  <div class="contact">
+    문의: 네트워크 관리자<br>
+    <a href="mailto:admin@example.com">admin@example.com</a>
+  </div>
 </div>
 </body>
 </html>"##;

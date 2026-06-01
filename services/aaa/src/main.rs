@@ -99,6 +99,7 @@ async fn main() -> anyhow::Result<()> {
         ldap,
         nats,
         jwt_secret,
+        pool,
         default_mac: None,
     });
 
@@ -113,9 +114,13 @@ async fn main() -> anyhow::Result<()> {
 
     let app = captive_portal::router(state);
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    // ConnectInfo 추출을 위해 with_connect_info 필요
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     tracing::info!("shutting down");
     Ok(())

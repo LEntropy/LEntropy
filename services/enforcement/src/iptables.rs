@@ -142,18 +142,26 @@ add set inet {t} {sb} {{ type ether_addr; }}
 add set inet {t} {sq} {{ type ether_addr; }}
 add set inet {t} {sbi} {{ type ipv4_addr; }}
 add set inet {t} {sqi} {{ type ipv4_addr; }}
+add chain inet {t} nac_prerouting {{ type nat hook prerouting priority dstnat; }}
+flush chain inet {t} nac_prerouting
+add rule inet {t} nac_prerouting ip saddr @{sbi} tcp dport 80 redirect to :{cp}
+add rule inet {t} nac_prerouting ip saddr @{sqi} tcp dport 80 redirect to :{cp}
 add chain inet {t} nac_forward {{ type filter hook forward priority -100; policy accept; }}
 flush chain inet {t} nac_forward
+add rule inet {t} nac_forward ether saddr @{sb} udp dport 53 accept
 add rule inet {t} nac_forward ether saddr @{sb} drop
 add rule inet {t} nac_forward ether saddr @{sq} udp dport 53 accept
 add rule inet {t} nac_forward ether saddr @{sq} tcp dport {cp} accept
 add rule inet {t} nac_forward ether saddr @{sq} drop
+add rule inet {t} nac_forward ip saddr @{sbi} udp dport 53 accept
 add rule inet {t} nac_forward ip saddr @{sbi} drop
 add rule inet {t} nac_forward ip saddr @{sqi} udp dport 53 accept
 add rule inet {t} nac_forward ip saddr @{sqi} tcp dport {cp} accept
 add rule inet {t} nac_forward ip saddr @{sqi} drop
 add chain inet {t} nac_input {{ type filter hook input priority -100; policy accept; }}
 flush chain inet {t} nac_input
+add rule inet {t} nac_input ip saddr @{sbi} tcp dport {cp} accept
+add rule inet {t} nac_input ip saddr @{sqi} tcp dport {cp} accept
 add rule inet {t} nac_input ether saddr @{sb} drop
 add rule inet {t} nac_input ip saddr @{sbi} drop
 "#,

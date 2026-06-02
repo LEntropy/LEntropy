@@ -2,6 +2,7 @@ pub mod audit;
 pub mod endpoints;
 pub mod evaluate;
 pub mod health;
+pub mod network;
 pub mod policies;
 pub mod stats;
 pub mod users;
@@ -61,6 +62,8 @@ fn v1_router(pool: PgPool, nats: NatsClient) -> Router {
                 .put(policies::update_policy)
                 .delete(policies::delete_policy),
         )
+        // Network management (ARP scan + subnet view)
+        .route("/network/hosts", get(network::list_hosts))
         // Audit log
         .route("/audit", get(audit::list_audit))
         // Stats

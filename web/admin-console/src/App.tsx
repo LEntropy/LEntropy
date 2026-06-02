@@ -2,8 +2,10 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { Dashboard } from './pages/Dashboard'
 import { Endpoints } from './pages/Endpoints'
+import { NetworkManagement } from './pages/NetworkManagement'
 import { Policies } from './pages/Policies'
 import { Blacklist } from './pages/Blacklist'
+import { UserManagement } from './pages/UserManagement'
 import { AuditLog } from './pages/AuditLog'
 import { Login } from './pages/Login'
 
@@ -27,8 +29,10 @@ export default function App() {
         >
           <Route path="/" element={<Dashboard />} />
           <Route path="/endpoints" element={<Endpoints />} />
+          <Route path="/network" element={<NetworkManagement />} />
           <Route path="/policies" element={<Policies />} />
           <Route path="/blacklist" element={<Blacklist />} />
+          <Route path="/users" element={<UserManagement />} />
           <Route path="/audit" element={<AuditLog />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

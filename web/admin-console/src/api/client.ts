@@ -112,3 +112,51 @@ export const auditApi = {
 export const statsApi = {
   get: () => api.get<DashboardStats>('/stats'),
 }
+
+// ── 네트워크 관리 ────────────────────────────────────────────────────────────
+
+export interface HostEntry {
+  ip: string
+  octet: number
+  mac: string | null
+  hostname: string | null
+  os_family: string | null
+  os_version: string | null
+  device_type: string | null
+  vendor: string | null
+  nac_status: 'allowed' | 'denied' | 'quarantined' | 'pending' | 'unregistered'
+  endpoint_id: string | null
+  last_auth_user: string | null
+  arp_active: boolean
+  last_seen: string | null
+}
+
+export const networkApi = {
+  hosts: (subnet?: string) =>
+    api.get<HostEntry[]>(`/network/hosts${subnet ? `?subnet=${encodeURIComponent(subnet)}` : ''}`),
+}
+
+// ── 사용자 관리 ───────────────────────────────────────────────────────────────
+
+export interface NacUser {
+  id: string
+  username: string
+  role: 'admin' | 'user'
+  enabled: boolean
+}
+
+export interface CreateUserRequest {
+  username: string
+  password: string
+  role: 'admin' | 'user'
+}
+
+export const usersApi = {
+  list: () => api.get<NacUser[]>('/users'),
+  create: (data: CreateUserRequest) => api.post<NacUser>('/users', data),
+  delete: (id: string) => api.delete(`/users/${id}`),
+  changePassword: (id: string, password: string) =>
+    api.put(`/users/${id}/password`, { password }),
+  enable: (id: string) => api.post(`/users/${id}/enable`),
+  disable: (id: string) => api.post(`/users/${id}/disable`),
+}

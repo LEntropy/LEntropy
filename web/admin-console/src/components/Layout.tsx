@@ -1,12 +1,14 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { Shield, Monitor, FileText, Activity, LogOut, Ban } from 'lucide-react'
+import { Shield, Monitor, FileText, Activity, LogOut, Ban, Network, Users } from 'lucide-react'
 import { clsx } from 'clsx'
 
 const nav = [
   { to: '/', label: '대시보드', icon: Activity, end: true },
   { to: '/endpoints', label: '단말 관리', icon: Monitor },
+  { to: '/network', label: '네트워크 관리', icon: Network },
   { to: '/policies', label: '정책 관리', icon: Shield },
   { to: '/blacklist', label: '블랙리스트', icon: Ban },
+  { to: '/users', label: '사용자 관리', icon: Users },
   { to: '/audit', label: '감사 로그', icon: FileText },
 ]
 

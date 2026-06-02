@@ -74,6 +74,7 @@ services:
       DATABASE_URL: postgres://nac:nac_dev_password@postgres:5432/nac
       REDIS_URL: redis://redis:6379
       NATS_URL: nats://nats:4222
+      LISTEN_ADDR: "0.0.0.0:8080"
       CAPTIVE_PORTAL_ADDR: "0.0.0.0:8080"
       RADIUS_AUTH_ADDR: "0.0.0.0:1812"
       RADIUS_ACCT_ADDR: "0.0.0.0:1813"

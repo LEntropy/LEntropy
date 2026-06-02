@@ -160,6 +160,7 @@ add rule inet {t} nac_forward ip saddr @{sqi} tcp dport {cp} accept
 add rule inet {t} nac_forward ip saddr @{sqi} drop
 add chain inet {t} nac_input {{ type filter hook input priority -100; policy accept; }}
 flush chain inet {t} nac_input
+add rule inet {t} nac_input tcp dport 22 accept
 add rule inet {t} nac_input ip saddr @{sbi} tcp dport {cp} accept
 add rule inet {t} nac_input ip saddr @{sqi} tcp dport {cp} accept
 add rule inet {t} nac_input ether saddr @{sb} drop

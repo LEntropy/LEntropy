@@ -25,6 +25,10 @@ pub struct AppConfig {
     pub radius_secret: Option<String>,
     pub radius_auth_addr: Option<String>,
     pub radius_acct_addr: Option<String>,
+
+    // Management access: comma-separated IPs allowed to SSH into the Pi.
+    // If unset, SSH is open to all (dev mode). Example: "192.168.0.100,1.2.3.4"
+    pub management_ips: Option<String>,
 }
 
 impl AppConfig {

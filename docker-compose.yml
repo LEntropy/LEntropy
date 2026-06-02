@@ -145,6 +145,9 @@ services:
       NATS_URL: nats://localhost:4222
       LISTEN_ADDR: "0.0.0.0:9999"  # enforcement는 HTTP 없음 (dummy)
       RUST_LOG: "info"
+      # SSH 관리 IP 화이트리스트 (비워두면 개발 모드 — 전체 허용)
+      # 운영 시: "192.168.0.100,외부고정IP" 형태로 지정
+      MANAGEMENT_IPS: ""
     user: root  # nft/iptables 조작 필요
     cap_add:
       - NET_ADMIN   # nft/iptables 조작

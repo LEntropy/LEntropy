@@ -34,8 +34,20 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(nats_url = %config.nats_url, "NATS connected");
 
     // ── iptables 초기화 ─────────────────────────────────────────────────────
+    let management_ips_raw = config.management_ips.clone().unwrap_or_default();
+    let management_ips: Vec<&str> = management_ips_raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    if management_ips.is_empty() {
+        tracing::warn!("MANAGEMENT_IPS not set — SSH open to all (dev mode)");
+    } else {
+        tracing::info!(ips = ?management_ips, "SSH restricted to management IPs");
+    }
+
     let ipt = Arc::new(iptables::IptablesEnforcer::new());
-    if let Err(e) = ipt.setup_chains() {
+    if let Err(e) = ipt.setup_chains(&management_ips) {
         tracing::warn!(error = %e, "iptables chain setup failed — enforcement may be limited");
     }
 
@@ -121,18 +133,20 @@ async fn main() -> anyhow::Result<()> {
                     continue;
                 };
 
+                // 게이트웨이를 동적으로 감지: DHCP 설정이 바뀌어도 (39↔1) 30초 내에 자동 적응
+                let current_gw = consumer::detect_default_gateway();
+
                 let mut ok = 0usize;
                 let mut fail = 0usize;
 
                 for entry in &entries {
+                    let gw = current_gw.unwrap_or(entry.gateway_ip);
                     let result = match entry.action {
-                        consumer::NacAction::Quarantine => spoofer_ref.quarantine(
-                            entry.victim_ip,
-                            entry.victim_mac,
-                            entry.gateway_ip,
-                        ),
+                        consumer::NacAction::Quarantine => {
+                            spoofer_ref.quarantine(entry.victim_ip, entry.victim_mac, gw)
+                        }
                         consumer::NacAction::Block => {
-                            spoofer_ref.block(entry.victim_ip, entry.victim_mac, entry.gateway_ip)
+                            spoofer_ref.block(entry.victim_ip, entry.victim_mac, gw)
                         }
                     };
                     match result {

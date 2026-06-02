@@ -62,9 +62,9 @@ impl IptablesEnforcer {
     }
 
     /// 시작 시 NAC 체인·set 초기화
-    pub fn setup_chains(&self) -> Result<()> {
+    pub fn setup_chains(&self, management_ips: &[&str]) -> Result<()> {
         match self.backend {
-            Backend::Nft => setup_nft(),
+            Backend::Nft => setup_nft(management_ips),
             Backend::IptablesLegacy => setup_ipt_legacy(),
             Backend::Unavailable => Ok(()),
         }
@@ -133,7 +133,24 @@ impl IptablesEnforcer {
 
 // ── nftables 구현 ────────────────────────────────────────────────────────────
 
-fn setup_nft() -> Result<()> {
+fn setup_nft(management_ips: &[&str]) -> Result<()> {
+    // Management IP 화이트리스트: 설정 시 SSH는 해당 IP만 허용, 미설정 시 전체 허용 (개발 모드)
+    let mgmt_elems_line = if management_ips.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "add element inet {NFT_TABLE} management_ips {{ {} }}\n",
+            management_ips.join(", ")
+        )
+    };
+    let ssh_rule = if management_ips.is_empty() {
+        format!("add rule inet {NFT_TABLE} nac_input tcp dport 22 accept\n")
+    } else {
+        format!(
+            "add rule inet {NFT_TABLE} nac_input ip saddr @management_ips tcp dport 22 accept\n"
+        )
+    };
+
     // nft -f - 로 전체 ruleset을 원자적으로 적용
     // flush chain → 규칙 리셋, set 내용(기존 차단 MAC/IP)은 유지됨
     let ruleset = format!(
@@ -142,6 +159,7 @@ add set inet {t} {sb} {{ type ether_addr; }}
 add set inet {t} {sq} {{ type ether_addr; }}
 add set inet {t} {sbi} {{ type ipv4_addr; }}
 add set inet {t} {sqi} {{ type ipv4_addr; }}
+add set inet {t} management_ips {{ type ipv4_addr; }}
 add chain inet {t} nac_prerouting {{ type nat hook prerouting priority dstnat; }}
 flush chain inet {t} nac_prerouting
 add rule inet {t} nac_prerouting ip saddr @{sbi} tcp dport 80 redirect to :{cp}
@@ -160,8 +178,7 @@ add rule inet {t} nac_forward ip saddr @{sqi} tcp dport {cp} accept
 add rule inet {t} nac_forward ip saddr @{sqi} drop
 add chain inet {t} nac_input {{ type filter hook input priority -100; policy accept; }}
 flush chain inet {t} nac_input
-add rule inet {t} nac_input tcp dport 22 accept
-add rule inet {t} nac_input ip saddr @{sbi} tcp dport {cp} accept
+{mgmt_elems}{ssh_rule}add rule inet {t} nac_input ip saddr @{sbi} tcp dport {cp} accept
 add rule inet {t} nac_input ip saddr @{sqi} tcp dport {cp} accept
 add rule inet {t} nac_input ether saddr @{sb} drop
 add rule inet {t} nac_input ip saddr @{sbi} drop
@@ -172,6 +189,8 @@ add rule inet {t} nac_input ip saddr @{sbi} drop
         sbi = SET_BLOCK_IP,
         sqi = SET_QUARANTINE_IP,
         cp = CAPTIVE_PORT,
+        mgmt_elems = mgmt_elems_line,
+        ssh_rule = ssh_rule,
     );
 
     let mut child = Command::new("nft")

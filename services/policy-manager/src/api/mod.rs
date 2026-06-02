@@ -4,6 +4,7 @@ pub mod evaluate;
 pub mod health;
 pub mod policies;
 pub mod stats;
+pub mod users;
 
 use async_nats::Client as NatsClient;
 use axum::Router;
@@ -31,7 +32,7 @@ pub fn router(pool: PgPool, nats: NatsClient) -> Router {
 }
 
 fn v1_router(pool: PgPool, nats: NatsClient) -> Router {
-    use axum::routing::{get, post};
+    use axum::routing::{delete, get, post, put};
 
     let state = AppState { pool, nats };
 
@@ -64,5 +65,10 @@ fn v1_router(pool: PgPool, nats: NatsClient) -> Router {
         .route("/audit", get(audit::list_audit))
         // Stats
         .route("/stats", get(stats::get_stats))
+        // Users (로컬 인증용)
+        .route("/users", get(users::list_users).post(users::create_user))
+        .route("/users/{id}", delete(users::delete_user))
+        .route("/users/{id}/password", put(users::change_password))
+        .route("/users/{id}/{action}", post(users::set_enabled))
         .with_state(state)
 }

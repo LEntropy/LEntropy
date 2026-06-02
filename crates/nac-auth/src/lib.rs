@@ -5,8 +5,10 @@ use thiserror::Error;
 
 pub mod jwt;
 pub mod ldap;
+pub mod local_auth;
 
 pub use ldap::LdapClient;
+pub use local_auth::LocalAuth;
 
 /// Authentication errors.
 #[derive(Debug, Error)]

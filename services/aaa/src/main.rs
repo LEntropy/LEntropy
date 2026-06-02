@@ -95,8 +95,10 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // ── Captive Portal 상태 ───────────────────────────────────────────────
+    let local_auth = nac_auth::LocalAuth::new(pool.clone());
     let state = Arc::new(captive_portal::PortalState {
         ldap,
+        local_auth,
         nats,
         jwt_secret,
         pool,

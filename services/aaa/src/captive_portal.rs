@@ -1,11 +1,16 @@
 //! Captive portal HTTP server for NAC authentication.
 //!
 //! Routes:
-//!   GET  /         → HTML login page
-//!   POST /login    → LDAP auth → JWT → NATS event
-//!   GET  /success  → success page
-//!   GET  /denied   → denied page
-//!   GET  /health   → {"status":"ok"}
+//!   GET  /                   → status-aware landing page
+//!   POST /login              → LDAP (or local DB fallback) auth → JWT → NATS event
+//!   GET  /success            → success page
+//!   GET  /denied             → denied page
+//!   GET  /blocked            → hard-blocked page
+//!   GET  /health             → {"status":"ok"}
+//!   GET  /ncsi.txt           → Windows NCSI connectivity probe
+//!   GET  /generate_204       → Android/Chrome connectivity probe
+//!   GET  /hotspot-detect.html → iOS/macOS connectivity probe
+//!   *    (fallback)          → redirect based on endpoint status
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -13,11 +18,12 @@ use std::sync::Arc;
 use async_nats::Client as NatsClient;
 use axum::{
     extract::{ConnectInfo, Query, State},
+    http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Form, Router,
 };
-use nac_auth::{jwt::sign_token, LdapClient, NacClaims};
+use nac_auth::{jwt::sign_token, LdapClient, LocalAuth, NacClaims};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
@@ -28,10 +34,10 @@ use tracing::{error, info, warn};
 
 pub struct PortalState {
     pub ldap: Option<LdapClient>,
+    pub local_auth: LocalAuth,
     pub nats: NatsClient,
     pub jwt_secret: Vec<u8>,
     pub pool: PgPool,
-    /// MAC address of the endpoint making the request (if known from query param)
     pub default_mac: Option<String>,
 }
 
@@ -47,11 +53,15 @@ pub fn router(state: SharedState) -> Router {
         .route("/denied", get(denied_page))
         .route("/blocked", get(blocked_page))
         .route("/health", get(health))
+        // OS connectivity probes — must return correct response when endpoint is allowed
+        .route("/ncsi.txt", get(ncsi_probe))
+        .route("/generate_204", get(generate_204))
+        .route("/hotspot-detect.html", get(hotspot_detect))
         .fallback(catch_all)
         .with_state(state)
 }
 
-// ── Handlers ─────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 async fn health() -> impl IntoResponse {
     axum::Json(json!({"status": "ok"}))
@@ -70,7 +80,52 @@ async fn endpoint_status(pool: &PgPool, ip: &str) -> Option<String> {
     .flatten()
 }
 
-/// GET / — 클라이언트 IP로 상태 확인 후 적절한 페이지 표시
+// ── Connectivity probes (Windows NCSI / Android / iOS) ───────────────────────
+//
+// OS들은 네트워크 연결 시 이 URL들로 프로브를 보낸다.
+// - blocked/quarantined: nftables가 이 요청을 Pi로 redirect → captive portal로 안내
+// - allowed: nftables 규칙 없음 → 실제 서버에 도달해야 하지만 혹시 여기 오면 정상 응답
+
+async fn ncsi_probe(
+    State(state): State<SharedState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    let ip = addr.ip().to_string();
+    match endpoint_status(&state.pool, &ip).await.as_deref() {
+        Some("denied") => Redirect::to("/blocked").into_response(),
+        Some("quarantined") => Redirect::to("/").into_response(),
+        // allowed이거나 상태 미확인: Windows NCSI 정상 응답 반환 → OS 팝업 해제
+        _ => (StatusCode::OK, "Microsoft NCSI\r\n").into_response(),
+    }
+}
+
+async fn generate_204(
+    State(state): State<SharedState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    let ip = addr.ip().to_string();
+    match endpoint_status(&state.pool, &ip).await.as_deref() {
+        Some("denied") => Redirect::to("/blocked").into_response(),
+        Some("quarantined") => Redirect::to("/").into_response(),
+        _ => StatusCode::NO_CONTENT.into_response(),
+    }
+}
+
+async fn hotspot_detect(
+    State(state): State<SharedState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    let ip = addr.ip().to_string();
+    match endpoint_status(&state.pool, &ip).await.as_deref() {
+        Some("denied") => Redirect::to("/blocked").into_response(),
+        Some("quarantined") => Redirect::to("/").into_response(),
+        _ => Html("<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>")
+            .into_response(),
+    }
+}
+
+// ── Page handlers ─────────────────────────────────────────────────────────────
+
 async fn landing_page(
     State(state): State<SharedState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -85,15 +140,10 @@ async fn landing_page(
             info!(ip, "quarantined endpoint accessing captive portal");
             Html(LOGIN_HTML).into_response()
         }
-        status => {
-            // 상태 미확인이거나 이미 allowed → 로그인 페이지 표시
-            info!(ip, ?status, "captive portal access");
-            Html(LOGIN_HTML).into_response()
-        }
+        _ => Html(LOGIN_HTML).into_response(),
     }
 }
 
-/// fallback — 포트 80에서 DNAT로 넘어온 임의 경로 처리
 async fn catch_all(
     State(state): State<SharedState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -101,7 +151,9 @@ async fn catch_all(
     let ip = addr.ip().to_string();
     match endpoint_status(&state.pool, &ip).await.as_deref() {
         Some("denied") => Redirect::to("/blocked").into_response(),
-        _ => Redirect::to("/").into_response(),
+        Some("quarantined") => Redirect::to("/").into_response(),
+        // allowed이거나 미등록: 204로 응답해 OS가 연결됐다고 인식하게 함
+        _ => StatusCode::NO_CONTENT.into_response(),
     }
 }
 
@@ -109,11 +161,12 @@ async fn blocked_page() -> Html<&'static str> {
     Html(BLOCKED_HTML)
 }
 
+// ── Login ─────────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Deserialize)]
 struct LoginForm {
     username: String,
     password: String,
-    /// Optional: forwarded by enforcement/redirect for session correlation
     mac: Option<String>,
     endpoint_id: Option<String>,
     session_id: Option<String>,
@@ -137,26 +190,27 @@ async fn handle_login(State(state): State<SharedState>, Form(form): Form<LoginFo
         .or_else(|| state.default_mac.clone())
         .unwrap_or_default();
 
-    // Require LDAP client; if not configured, respond with error
-    let ldap = match &state.ldap {
-        Some(c) => c,
-        None => {
-            warn!("LDAP not configured — denying login attempt");
-            return Redirect::to("/denied?reason=ldap_not_configured").into_response();
-        }
-    };
-
     info!(username = %form.username, mac = %mac, "login attempt");
 
-    match ldap.authenticate(&form.username, &form.password).await {
+    // LDAP 우선, 없으면 로컬 DB 인증 fallback
+    let identity_result: anyhow::Result<nac_auth::UserIdentity> = if let Some(ldap) = &state.ldap {
+        ldap.authenticate(&form.username, &form.password).await
+    } else {
+        state
+            .local_auth
+            .authenticate(&form.username, &form.password)
+            .await
+            .map_err(anyhow::Error::from)
+    };
+
+    match identity_result {
         Ok(identity) => {
             info!(
                 username = %identity.username,
                 groups   = ?identity.groups,
-                "LDAP authentication successful"
+                "authentication successful"
             );
 
-            // Build JWT claims (1-hour expiry)
             let now = OffsetDateTime::now_utc().unix_timestamp();
             let claims = NacClaims {
                 sub: identity.username.clone(),
@@ -173,9 +227,6 @@ async fn handle_login(State(state): State<SharedState>, Form(form): Form<LoginFo
                 }
             };
 
-            info!(username = %identity.username, "JWT issued");
-
-            // Publish auth.response to NATS
             let event = AuthResponseEvent {
                 session_id: form.session_id.clone(),
                 endpoint_id: form.endpoint_id.clone(),
@@ -187,7 +238,6 @@ async fn handle_login(State(state): State<SharedState>, Form(form): Form<LoginFo
             };
 
             publish_auth_response(&state.nats, &event, &token).await;
-
             Redirect::to("/success").into_response()
         }
         Err(e) => {
@@ -195,10 +245,9 @@ async fn handle_login(State(state): State<SharedState>, Form(form): Form<LoginFo
                 username = %form.username,
                 mac      = %mac,
                 error    = %e,
-                "LDAP authentication failed"
+                "authentication failed"
             );
 
-            // Publish failure event
             let event = AuthResponseEvent {
                 session_id: form.session_id.clone(),
                 endpoint_id: form.endpoint_id.clone(),
@@ -209,7 +258,6 @@ async fn handle_login(State(state): State<SharedState>, Form(form): Form<LoginFo
                 reason: Some("invalid_credentials".to_string()),
             };
             publish_auth_response(&state.nats, &event, "").await;
-
             Redirect::to("/denied?reason=invalid_credentials").into_response()
         }
     }
@@ -226,11 +274,10 @@ async fn success_page() -> Html<&'static str> {
 
 async fn denied_page(Query(q): Query<DeniedQuery>) -> Html<String> {
     let reason = q.reason.unwrap_or_else(|| "알 수 없는 오류".to_string());
-    let html = DENIED_HTML.replace("{{REASON}}", &reason);
-    Html(html)
+    Html(DENIED_HTML.replace("{{REASON}}", &reason))
 }
 
-// ── NATS publish ─────────────────────────────────────────────────────────────
+// ── NATS publish ──────────────────────────────────────────────────────────────
 
 async fn publish_auth_response(nats: &NatsClient, event: &AuthResponseEvent, _token: &str) {
     let subject = "nac.events.auth.response";
@@ -247,9 +294,7 @@ async fn publish_auth_response(nats: &NatsClient, event: &AuthResponseEvent, _to
                 );
             }
         }
-        Err(e) => {
-            error!(error = %e, "failed to serialize auth response event");
-        }
+        Err(e) => error!(error = %e, "failed to serialize auth response event"),
     }
 }
 
@@ -346,13 +391,30 @@ static SUCCESS_HTML: &str = r##"<!DOCTYPE html>
   .icon { font-size: 64px; margin-bottom: 24px; }
   h1 { font-size: 24px; color: #16a34a; margin-bottom: 12px; }
   p { color: #666; font-size: 15px; }
+  .btn {
+    display: inline-block; margin-top: 24px; padding: 12px 32px;
+    background: #4f46e5; color: #fff; border-radius: 8px;
+    text-decoration: none; font-weight: 600; font-size: 15px;
+  }
 </style>
+<script>
+  // 인증 성공 후 3초마다 연결 상태를 확인해 OS 팝업이 자동으로 닫히도록 한다
+  let tries = 0;
+  const check = setInterval(async () => {
+    try {
+      const r = await fetch('/generate_204');
+      if (r.status === 204) { clearInterval(check); }
+    } catch (_) {}
+    if (++tries > 10) clearInterval(check);
+  }, 3000);
+</script>
 </head>
 <body>
 <div class="container">
   <div class="icon">✅</div>
   <h1>인증 성공</h1>
-  <p>네트워크 접속이 허가되었습니다.<br>잠시 후 자동으로 연결됩니다.</p>
+  <p>네트워크 접속이 허가되었습니다.<br>브라우저를 닫고 다시 접속해보세요.</p>
+  <a class="btn" href="http://www.msftncsi.com/ncsi.txt" onclick="window.open(this.href);return false;">연결 확인</a>
 </div>
 </body>
 </html>"##;

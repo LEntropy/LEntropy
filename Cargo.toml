@@ -43,6 +43,7 @@ thiserror = "2"
 config    = "0.14"
 uuid      = { version = "1", features = ["v4", "serde"] }
 time      = { version = "0.3", features = ["serde", "serde-human-readable"] }
+argon2    = { version = "0.5", features = ["std"] }
 
 [profile.release]
 opt-level = 3

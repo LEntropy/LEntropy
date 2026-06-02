@@ -134,6 +134,11 @@ impl IptablesEnforcer {
 // ── nftables 구현 ────────────────────────────────────────────────────────────
 
 fn setup_nft(management_ips: &[&str]) -> Result<()> {
+    // ip_forward가 꺼져 있으면 Pi가 패킷을 전달하지 않음 — 항상 강제 활성화
+    let _ = Command::new("sysctl")
+        .args(["-w", "net.ipv4.ip_forward=1"])
+        .output();
+
     // Management IP 화이트리스트: 설정 시 SSH는 해당 IP만 허용, 미설정 시 전체 허용 (개발 모드)
     let mgmt_elems_line = if management_ips.is_empty() {
         String::new()
@@ -182,6 +187,10 @@ flush chain inet {t} nac_input
 add rule inet {t} nac_input ip saddr @{sqi} tcp dport {cp} accept
 add rule inet {t} nac_input ether saddr @{sb} drop
 add rule inet {t} nac_input ip saddr @{sbi} drop
+add table ip {t}_nat
+add chain ip {t}_nat nac_postrouting {{ type nat hook postrouting priority srcnat; }}
+flush chain ip {t}_nat nac_postrouting
+add rule ip {t}_nat nac_postrouting masquerade
 "#,
         t = NFT_TABLE,
         sb = SET_BLOCK,

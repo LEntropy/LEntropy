@@ -2,11 +2,11 @@
 //! Proxies requests to internal services and validates JWT tokens.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     middleware,
     response::{IntoResponse, Response},
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -48,17 +48,32 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let protected = Router::new()
+        // Endpoints
         .route("/endpoints", get(list_endpoints))
+        .route("/endpoints/mac/{mac}", get(get_endpoint_by_mac))
+        .route("/endpoints/{id}", get(get_endpoint))
         .route("/endpoints/{id}/allow", post(allow_endpoint))
         .route("/endpoints/{id}/block", post(block_endpoint))
         .route("/endpoints/{id}/quarantine", post(quarantine_endpoint))
         .route("/endpoints/{id}/policy", post(assign_policy))
         .route("/endpoints/{id}/exempt", post(set_exempt))
+        // Policies
         .route("/policies", get(list_policies).post(create_policy))
         .route("/policies/evaluate", post(evaluate_policies))
-        .route("/policies/{id}", put(update_policy).delete(delete_policy))
+        .route(
+            "/policies/{id}",
+            get(get_policy).put(update_policy).delete(delete_policy),
+        )
+        // Audit & Stats
         .route("/audit", get(list_audit))
         .route("/stats", get(get_stats))
+        // Users (사용자 관리)
+        .route("/users", get(list_users).post(create_user))
+        .route("/users/{id}", delete(delete_user))
+        .route("/users/{id}/password", put(change_password))
+        .route("/users/{id}/{action}", post(set_user_enabled))
+        // Network (네트워크 관리)
+        .route("/network/hosts", get(list_network_hosts))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_auth,
@@ -230,12 +245,114 @@ async fn delete_policy(
     proxy_delete(&state.policy_manager_url, &format!("/api/v1/policies/{id}")).await
 }
 
-async fn list_audit(State(state): State<Arc<AppState>>) -> Result<Response, StatusCode> {
-    proxy_get(&state.policy_manager_url, "/api/v1/audit").await
+async fn list_audit(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<Vec<(String, String)>>,
+) -> Result<Response, StatusCode> {
+    let qs = build_query_string(&params);
+    proxy_get(&state.policy_manager_url, &format!("/api/v1/audit{qs}")).await
 }
 
 async fn get_stats(State(state): State<Arc<AppState>>) -> Result<Response, StatusCode> {
     proxy_get(&state.policy_manager_url, "/api/v1/stats").await
+}
+
+async fn get_endpoint(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Response, StatusCode> {
+    proxy_get(
+        &state.policy_manager_url,
+        &format!("/api/v1/endpoints/{id}"),
+    )
+    .await
+}
+
+async fn get_endpoint_by_mac(
+    State(state): State<Arc<AppState>>,
+    Path(mac): Path<String>,
+) -> Result<Response, StatusCode> {
+    proxy_get(
+        &state.policy_manager_url,
+        &format!("/api/v1/endpoints/mac/{mac}"),
+    )
+    .await
+}
+
+async fn get_policy(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Response, StatusCode> {
+    proxy_get(&state.policy_manager_url, &format!("/api/v1/policies/{id}")).await
+}
+
+// ── 사용자 관리 프록시 ─────────────────────────────────────────────────────
+
+async fn list_users(State(state): State<Arc<AppState>>) -> Result<Response, StatusCode> {
+    proxy_get(&state.policy_manager_url, "/api/v1/users").await
+}
+
+async fn create_user(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Response, StatusCode> {
+    proxy_post_body(&state.policy_manager_url, "/api/v1/users", headers, body).await
+}
+
+async fn delete_user(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Response, StatusCode> {
+    proxy_delete(&state.policy_manager_url, &format!("/api/v1/users/{id}")).await
+}
+
+async fn change_password(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Response, StatusCode> {
+    proxy_put_body(
+        &state.policy_manager_url,
+        &format!("/api/v1/users/{id}/password"),
+        headers,
+        body,
+    )
+    .await
+}
+
+async fn set_user_enabled(
+    State(state): State<Arc<AppState>>,
+    Path((id, action)): Path<(String, String)>,
+) -> Result<Response, StatusCode> {
+    proxy_post(
+        &state.policy_manager_url,
+        &format!("/api/v1/users/{id}/{action}"),
+    )
+    .await
+}
+
+// ── 네트워크 관리 프록시 ───────────────────────────────────────────────────
+
+async fn list_network_hosts(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<Vec<(String, String)>>,
+) -> Result<Response, StatusCode> {
+    let qs = build_query_string(&params);
+    proxy_get(
+        &state.policy_manager_url,
+        &format!("/api/v1/network/hosts{qs}"),
+    )
+    .await
+}
+
+fn build_query_string(params: &[(String, String)]) -> String {
+    if params.is_empty() {
+        return String::new();
+    }
+    let encoded: Vec<String> = params.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+    format!("?{}", encoded.join("&"))
 }
 
 // ── HTTP 프록시 헬퍼 ──────────────────────────────────────────────────────

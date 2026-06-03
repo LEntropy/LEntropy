@@ -51,8 +51,15 @@ struct ArpEntry {
 }
 
 /// /proc/net/arp 파싱
+/// 컨테이너에서는 /host/proc/net/arp (docker-compose volume 마운트),
+/// 호스트 직접 실행 시에는 /proc/net/arp 를 fallback으로 읽음
 async fn read_arp_table() -> Vec<ArpEntry> {
-    let content = match tokio::fs::read_to_string("/proc/net/arp").await {
+    let path = if tokio::fs::metadata("/host/proc/net/arp").await.is_ok() {
+        "/host/proc/net/arp"
+    } else {
+        "/proc/net/arp"
+    };
+    let content = match tokio::fs::read_to_string(path).await {
         Ok(c) => c,
         Err(_) => return vec![],
     };

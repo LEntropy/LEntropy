@@ -24,7 +24,7 @@ pub async fn run_reconciliation(nats: Client, pool: PgPool) {
 async fn reconcile(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
     // 1. 차단/격리 단말 재차단
     let rows: Vec<(String, Option<String>, String)> = sqlx::query_as(
-        "SELECT mac_address, ip_address, status FROM endpoints \
+        "SELECT mac_address::TEXT, ip_address::TEXT, status FROM endpoints \
          WHERE status IN ('denied', 'quarantined')",
     )
     .fetch_all(pool)
@@ -126,8 +126,9 @@ async fn arp_sync(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
         .unwrap_or(0);
 
     // DB에서 기존 단말 MAC 조회
+    // MACADDR/INET 타입 → TEXT 캐스팅 필요
     let existing: Vec<(String, Option<String>)> =
-        sqlx::query_as("SELECT mac_address, ip_address FROM endpoints")
+        sqlx::query_as("SELECT mac_address::TEXT, ip_address::TEXT FROM endpoints")
             .fetch_all(pool)
             .await?;
 

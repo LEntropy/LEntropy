@@ -4,6 +4,7 @@ use sqlx::postgres::PgPoolOptions;
 use tracing_subscriber::{fmt, EnvFilter};
 
 mod api;
+mod background;
 mod consumer;
 mod posture_handler;
 mod session_handler;
@@ -61,6 +62,20 @@ async fn main() -> anyhow::Result<()> {
         if let Err(e) = posture_handler::run(posture_nats, posture_pool).await {
             tracing::error!(error = %e, "posture handler error");
         }
+    });
+
+    // 백그라운드 태스크: 시작 시 enforcement 재조정 (enforcement 서비스 재시작 후 복구)
+    let reconcile_pool = pool.clone();
+    let reconcile_nats = nats.clone();
+    tokio::spawn(async move {
+        background::run_reconciliation(reconcile_nats, reconcile_pool).await;
+    });
+
+    // 백그라운드 태스크: 주기적 ARP 테이블 스캔 → 단말 IP 자동 업데이트
+    let arp_pool = pool.clone();
+    let arp_nats = nats.clone();
+    tokio::spawn(async move {
+        background::run_arp_sync(arp_nats, arp_pool).await;
     });
 
     // REST API 서버

@@ -70,6 +70,12 @@ pub async fn run(
             "enforcement command received"
         );
 
+        // DB에서 오는 IP는 CIDR 표기일 수 있음 (예: 192.168.0.24/32) — 수신 즉시 제거
+        let cmd = EnforcementCommand {
+            ip_address: cmd.ip_address.split('/').next().unwrap_or("").to_string(),
+            ..cmd
+        };
+
         let result = if is_allow_action(&cmd.action) {
             execute_allow(&cmd, &spoofer, &ipt, &state)
         } else {

@@ -80,8 +80,11 @@ impl IptablesEnforcer {
                 debug!(mac = %m, "nft: added to blocked_macs");
                 if let Some(ip) = ip.filter(|s| !s.is_empty() && *s != "0.0.0.0") {
                     nft_del_elem(SET_QUARANTINE_IP, ip).ok();
-                    nft_add_elem(SET_BLOCK_IP, ip)?;
-                    debug!(ip, "nft: added to blocked_ips");
+                    if let Err(e) = nft_add_elem(SET_BLOCK_IP, ip) {
+                        warn!(ip, error = %e, "nft: blocked_ips add failed — MAC-only block applied");
+                    } else {
+                        debug!(ip, "nft: added to blocked_ips");
+                    }
                 }
                 Ok(())
             }
@@ -100,8 +103,11 @@ impl IptablesEnforcer {
                 debug!(mac = %m, "nft: added to quarantined_macs");
                 if let Some(ip) = ip.filter(|s| !s.is_empty() && *s != "0.0.0.0") {
                     nft_del_elem(SET_BLOCK_IP, ip).ok();
-                    nft_add_elem(SET_QUARANTINE_IP, ip)?;
-                    debug!(ip, "nft: added to quarantined_ips");
+                    if let Err(e) = nft_add_elem(SET_QUARANTINE_IP, ip) {
+                        warn!(ip, error = %e, "nft: quarantined_ips add failed — MAC-only quarantine applied");
+                    } else {
+                        debug!(ip, "nft: added to quarantined_ips");
+                    }
                 }
                 Ok(())
             }

@@ -49,6 +49,8 @@ pub struct EndpointRow {
     pub posture_bluetooth: Option<bool>,
     pub posture_folder_sharing: Option<bool>,
     pub posture_os_version: Option<String>,
+    /// NAC 에이전트 고유 ID (파일 기반 UUID) — MAC 변경 시에도 동일 단말 추적
+    pub agent_id: Option<String>,
 }
 
 /// 단말 신규 등록 / 업서트용 파라미터
@@ -62,6 +64,8 @@ pub struct UpsertEndpoint {
     pub device_type: Option<String>,
     pub vendor: Option<String>,
     pub interface: Option<String>,
+    /// 에이전트 등록 시에만 설정 (ARP/DHCP 경로는 None)
+    pub agent_id: Option<String>,
 }
 
 /// 단말 레코드 조회/저장 레포지토리
@@ -76,7 +80,8 @@ const SELECT_COLS: &str = r#"
     first_seen, last_seen, is_compliant, last_posture_check,
     assigned_policy_id, policy_exempt,
     posture_sw, COALESCE(posture_missing_patches, 0) AS posture_missing_patches,
-    posture_usb_enabled, posture_bluetooth, posture_folder_sharing, posture_os_version
+    posture_usb_enabled, posture_bluetooth, posture_folder_sharing, posture_os_version,
+    agent_id
 "#;
 
 impl<'a> EndpointRepo<'a> {
@@ -90,8 +95,8 @@ impl<'a> EndpointRepo<'a> {
             r#"
             INSERT INTO endpoints (mac_address, ip_address, hostname,
                                    os_family, os_version, device_type,
-                                   vendor, interface)
-            VALUES ($1::macaddr, $2::inet, $3, $4, $5, $6, $7, $8)
+                                   vendor, interface, agent_id)
+            VALUES ($1::macaddr, $2::inet, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (mac_address) DO UPDATE SET
                 ip_address  = COALESCE(EXCLUDED.ip_address,  endpoints.ip_address),
                 hostname    = COALESCE(EXCLUDED.hostname,    endpoints.hostname),
@@ -100,6 +105,7 @@ impl<'a> EndpointRepo<'a> {
                 device_type = COALESCE(EXCLUDED.device_type, endpoints.device_type),
                 vendor      = COALESCE(EXCLUDED.vendor,      endpoints.vendor),
                 interface   = COALESCE(EXCLUDED.interface,   endpoints.interface),
+                agent_id    = COALESCE(EXCLUDED.agent_id,    endpoints.agent_id),
                 last_seen   = NOW()
             RETURNING
                 id, mac_address::text, ip_address::text,
@@ -108,7 +114,8 @@ impl<'a> EndpointRepo<'a> {
                 first_seen, last_seen, is_compliant, last_posture_check,
                 assigned_policy_id, policy_exempt,
                 posture_sw, COALESCE(posture_missing_patches, 0) AS posture_missing_patches,
-                posture_usb_enabled, posture_bluetooth, posture_folder_sharing, posture_os_version
+                posture_usb_enabled, posture_bluetooth, posture_folder_sharing, posture_os_version,
+                agent_id
             "#,
         )
         .bind(&ep.mac_address)
@@ -119,7 +126,41 @@ impl<'a> EndpointRepo<'a> {
         .bind(&ep.device_type)
         .bind(&ep.vendor)
         .bind(&ep.interface)
+        .bind(&ep.agent_id)
         .fetch_one(self.pool)
+        .await?;
+
+        Ok(row)
+    }
+
+    /// agent_id로 단말 조회 및 업데이트 (MAC 변경 시에도 동일 단말 추적)
+    /// 에이전트가 다른 MAC/IP로 재연결 시 사용
+    pub async fn upsert_by_agent_id(&self, ep: &UpsertEndpoint) -> Result<Option<EndpointRow>> {
+        let Some(ref agent_id) = ep.agent_id else {
+            return Ok(None);
+        };
+        if agent_id.is_empty() {
+            return Ok(None);
+        }
+
+        let row = sqlx::query_as::<_, EndpointRow>(&format!(
+            "UPDATE endpoints SET
+                mac_address = $1::macaddr,
+                ip_address  = COALESCE($2::inet, ip_address),
+                hostname    = COALESCE($3, hostname),
+                os_family   = COALESCE($4, os_family),
+                os_version  = COALESCE($5, os_version),
+                last_seen   = NOW()
+             WHERE agent_id = $6
+             RETURNING {SELECT_COLS}"
+        ))
+        .bind(&ep.mac_address)
+        .bind(&ep.ip_address)
+        .bind(&ep.hostname)
+        .bind(&ep.os_family)
+        .bind(&ep.os_version)
+        .bind(agent_id)
+        .fetch_optional(self.pool)
         .await?;
 
         Ok(row)
@@ -144,6 +185,18 @@ impl<'a> EndpointRepo<'a> {
             "SELECT {SELECT_COLS} FROM endpoints WHERE mac_address = $1::macaddr"
         ))
         .bind(mac)
+        .fetch_optional(self.pool)
+        .await?;
+
+        Ok(row)
+    }
+
+    /// agent_id로 단말 조회
+    pub async fn find_by_agent_id(&self, agent_id: &str) -> Result<Option<EndpointRow>> {
+        let row = sqlx::query_as::<_, EndpointRow>(&format!(
+            "SELECT {SELECT_COLS} FROM endpoints WHERE agent_id = $1"
+        ))
+        .bind(agent_id)
         .fetch_optional(self.pool)
         .await?;
 

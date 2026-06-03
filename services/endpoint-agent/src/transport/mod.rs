@@ -31,11 +31,19 @@ impl AgentTransport {
         })
     }
 
-    pub async fn register(&mut self, os: &str, version: &str) -> Result<String> {
+    pub async fn register(
+        &mut self,
+        os: &str,
+        version: &str,
+        primary_mac: &str,
+        hostname: &str,
+    ) -> Result<String> {
         let req = RegisterRequest {
             device_id: self.device_id.clone(),
             os: os.to_string(),
             version: version.to_string(),
+            primary_mac: primary_mac.to_string(),
+            hostname: hostname.to_string(),
         };
         let resp = self.client.register(tonic::Request::new(req)).await?;
         let token = resp.into_inner().token;

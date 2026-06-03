@@ -67,7 +67,11 @@ async fn main() -> Result<()> {
 
     // 초기 등록
     let os_str = format!("{} {}", sys.os_name, sys.os_version);
-    if let Err(e) = transport.register(&os_str, &sys.agent_version).await {
+    info!(primary_mac = %sys.primary_mac, hostname = %sys.hostname, "registering with gateway");
+    if let Err(e) = transport
+        .register(&os_str, &sys.agent_version, &sys.primary_mac, &sys.hostname)
+        .await
+    {
         error!(error = %e, "initial registration failed");
     }
 

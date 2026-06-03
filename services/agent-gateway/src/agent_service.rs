@@ -9,34 +9,12 @@ use nac_store::posture::{PatchItem, PostureReport, SoftwareItem};
 use sqlx::PgPool;
 use time::OffsetDateTime;
 use tonic::{Request, Response, Status};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 pub struct AgentServiceImpl {
     pub nats: async_nats::Client,
     pub pool: PgPool,
     pub jwt_secret: Vec<u8>,
-}
-
-/// UUID device_id의 앞 6바이트를 MAC 주소 형식으로 변환 (PostgreSQL MACADDR 타입 호환)
-fn device_id_to_mac(device_id: &str) -> String {
-    let hex: String = device_id
-        .chars()
-        .filter(|c| c.is_ascii_hexdigit())
-        .take(12)
-        .collect();
-    if hex.len() == 12 {
-        format!(
-            "{}:{}:{}:{}:{}:{}",
-            &hex[0..2],
-            &hex[2..4],
-            &hex[4..6],
-            &hex[6..8],
-            &hex[8..10],
-            &hex[10..12]
-        )
-    } else {
-        "00:00:00:00:00:00".to_string()
-    }
 }
 
 #[tonic::async_trait]
@@ -47,36 +25,81 @@ impl AgentService for AgentServiceImpl {
     ) -> Result<Response<RegisterResponse>, Status> {
         let remote_ip = request.remote_addr().map(|a| a.ip().to_string());
         let req = request.into_inner();
-        debug!(device_id = %req.device_id, os = %req.os, "agent register");
 
-        let mac = device_id_to_mac(&req.device_id);
+        let device_id = req.device_id.clone();
+        let primary_mac = normalize_mac(&req.primary_mac);
+        let hostname = if req.hostname.is_empty() {
+            None
+        } else {
+            Some(req.hostname.clone())
+        };
+
+        debug!(
+            device_id = %device_id,
+            mac = ?primary_mac,
+            os = %req.os,
+            "agent register"
+        );
+
         let repo = EndpointRepo::new(&self.pool);
+
         let ep = UpsertEndpoint {
-            mac_address: mac,
+            // primary_mac이 없으면 agent_id 앞 12 hex → MAC (이전 호환)
+            mac_address: primary_mac
+                .clone()
+                .unwrap_or_else(|| legacy_device_id_to_mac(&device_id)),
             ip_address: remote_ip,
-            hostname: None,
+            hostname,
             os_family: Some(req.os.clone()),
             os_version: Some(req.version.clone()),
             device_type: None,
             vendor: None,
             interface: None,
+            agent_id: Some(device_id.clone()),
         };
 
-        repo.upsert(&ep).await.map_err(|e| {
-            tracing::error!(error = %e, "failed to upsert endpoint");
-            Status::internal("database error")
-        })?;
+        // ── 등록 전략 ────────────────────────────────────────────────────────
+        // 1. agent_id로 기존 레코드 업데이트 (MAC 변경 추적)
+        // 2. primary_mac으로 기존 레코드에 agent_id 연결 (최초 에이전트 등록)
+        // 3. 신규 INSERT
 
+        let row = if let Ok(Some(updated)) = repo.upsert_by_agent_id(&ep).await {
+            // 기존 agent_id 레코드 — MAC/IP 업데이트
+            info!(
+                device_id = %device_id,
+                mac = %updated.mac_address,
+                ip = ?updated.ip_address,
+                "agent re-registered (agent_id matched)"
+            );
+            updated
+        } else {
+            // MAC 기준 업서트 (ARP로 이미 발견된 단말에 agent_id 연결 포함)
+            let row = repo.upsert(&ep).await.map_err(|e| {
+                warn!(error = %e, "failed to upsert endpoint");
+                Status::internal("database error")
+            })?;
+            info!(
+                device_id = %device_id,
+                mac = %row.mac_address,
+                status = %row.status,
+                "agent registered"
+            );
+            row
+        };
+
+        let _ = row; // status used for logging above
+
+        // JWT 발급
         let now = OffsetDateTime::now_utc();
         let claims = NacClaims {
-            sub: req.device_id.clone(),
+            sub: device_id.clone(),
             groups: vec![],
             exp: (now + time::Duration::hours(24)).unix_timestamp(),
             iat: now.unix_timestamp(),
         };
 
         let token = jwt::sign_token(&claims, &self.jwt_secret).map_err(|e| {
-            tracing::error!(error = %e, "failed to sign JWT");
+            warn!(error = %e, "failed to sign JWT");
             Status::internal("token error")
         })?;
 
@@ -87,7 +110,7 @@ impl AgentService for AgentServiceImpl {
         &self,
         request: Request<StatusReport>,
     ) -> Result<Response<StatusAck>, Status> {
-        // JWT 토큰 검증 — Authorization: Bearer <token> 메타데이터
+        // JWT 검증
         let auth_val = request
             .metadata()
             .get("authorization")
@@ -100,9 +123,7 @@ impl AgentService for AgentServiceImpl {
                     return Err(Status::unauthenticated("invalid or expired token"));
                 }
             }
-            None => {
-                return Err(Status::unauthenticated("missing authorization token"));
-            }
+            None => return Err(Status::unauthenticated("missing authorization token")),
         }
 
         let req = request.into_inner();
@@ -151,10 +172,9 @@ impl AgentService for AgentServiceImpl {
                 Status::internal("nats error")
             })?;
 
-        // 단말 상태에 따라 액션 결정
-        let mac = device_id_to_mac(&req.device_id);
+        // agent_id로 단말 상태 조회
         let repo = EndpointRepo::new(&self.pool);
-        let action = match repo.find_by_mac(&mac).await {
+        let action = match repo.find_by_agent_id(&req.device_id).await {
             Ok(Some(ep)) => match ep.status.as_str() {
                 "denied" => "Deny",
                 "quarantined" => "Quarantine",
@@ -183,5 +203,42 @@ impl AgentService for AgentServiceImpl {
             allow_bluetooth: true,
             allow_folder_sharing: false,
         }))
+    }
+}
+
+/// MAC 주소 정규화: "AA-BB-CC-DD-EE-FF" / "AABBCCDDEEEE" → "aa:bb:cc:dd:ee:ff"
+/// 빈 문자열이면 None 반환
+fn normalize_mac(s: &str) -> Option<String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let hex: String = s.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+    if hex.len() == 12 {
+        Some(
+            (0..6)
+                .map(|i| hex[i * 2..i * 2 + 2].to_lowercase())
+                .collect::<Vec<_>>()
+                .join(":"),
+        )
+    } else {
+        None
+    }
+}
+
+/// 이전 버전 호환: UUID device_id 앞 12 hex → MAC (primary_mac 없는 구버전 에이전트용)
+fn legacy_device_id_to_mac(device_id: &str) -> String {
+    let hex: String = device_id
+        .chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .take(12)
+        .collect();
+    if hex.len() == 12 {
+        (0..6)
+            .map(|i| hex[i * 2..i * 2 + 2].to_lowercase())
+            .collect::<Vec<_>>()
+            .join(":")
+    } else {
+        "00:00:00:00:00:00".to_string()
     }
 }

@@ -96,6 +96,7 @@ async fn process_event(nats: &Client, pool: &PgPool, event: EndpointDetectedEven
         } else {
             Some(event.interface.clone())
         },
+        agent_id: None,
     };
 
     let row = endpoint_repo.upsert(&ep).await?;

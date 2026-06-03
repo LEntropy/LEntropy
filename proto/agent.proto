@@ -11,6 +11,8 @@ message RegisterRequest {
   string device_id = 1;
   string os = 2;
   string version = 3;
+  string primary_mac = 4;  // 실제 하드웨어 MAC (xx:xx:xx:xx:xx:xx)
+  string hostname = 5;     // 호스트명
 }
 
 message RegisterResponse {

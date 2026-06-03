@@ -110,6 +110,15 @@ impl IptablesEnforcer {
         }
     }
 
+    /// IP만 모든 set에서 제거 (IP 변경 시 이전 IP 정리용)
+    pub fn remove_ip(&self, ip: &str) {
+        if let Backend::Nft = self.backend {
+            nft_del_elem(SET_BLOCK_IP, ip).ok();
+            nft_del_elem(SET_QUARANTINE_IP, ip).ok();
+            debug!(ip, "nft: removed stale IP from all sets");
+        }
+    }
+
     /// 단말 허용 (allowed): 모든 규칙 제거
     pub fn allow(&self, mac: &str, ip: Option<&str>) -> Result<()> {
         match self.backend {

@@ -68,7 +68,15 @@ async fn process_event(nats: &Client, pool: &PgPool, event: EndpointDetectedEven
     let audit_repo = AuditRepo::new(pool);
     let session_repo = SessionRepo::new(pool);
 
-    // ── 1. 단말 업서트 ────────────────────────────────────────────────────
+    // ── 1. 단말 업서트 (업서트 전 기존 IP 저장) ──────────────────────────
+    let old_ip = endpoint_repo
+        .find_by_mac(&event.mac_address)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|e| e.ip_address)
+        .map(strip_cidr);
+
     let ip = if event.ip_address.is_empty() {
         None
     } else {
@@ -91,11 +99,16 @@ async fn process_event(nats: &Client, pool: &PgPool, event: EndpointDetectedEven
     };
 
     let row = endpoint_repo.upsert(&ep).await?;
+    let new_ip = row.ip_address.clone().map(strip_cidr);
+
+    // IP 변경 여부 체크
+    let ip_changed = new_ip.is_some() && old_ip != new_ip;
 
     debug!(
         id     = %row.id,
         mac    = %row.mac_address,
         status = %row.status,
+        ip_changed,
         "endpoint upserted"
     );
 
@@ -107,13 +120,35 @@ async fn process_event(nats: &Client, pool: &PgPool, event: EndpointDetectedEven
             &format!("sensor/{}", event.source),
             json!({
                 "mac": row.mac_address,
-                "ip":  row.ip_address,
+                "ip":  new_ip,
                 "source": event.source,
                 "os_family": row.os_family,
                 "device_type": row.device_type,
             }),
         )
         .await?;
+
+    // IP 변경 감사 로그
+    if ip_changed {
+        audit_repo
+            .log(
+                "endpoint_ip_changed",
+                Some(row.id),
+                "sensor",
+                json!({
+                    "mac":    row.mac_address,
+                    "old_ip": old_ip,
+                    "new_ip": new_ip,
+                }),
+            )
+            .await?;
+        info!(
+            mac    = %row.mac_address,
+            old_ip = ?old_ip,
+            new_ip = ?new_ip,
+            "endpoint IP changed"
+        );
+    }
 
     // ── 3. 정책 평가 ─────────────────────────────────────────────────────
     let mut rules = policy_repo.load_rules().await?;
@@ -145,8 +180,13 @@ async fn process_event(nats: &Client, pool: &PgPool, event: EndpointDetectedEven
         "policy evaluated"
     );
 
-    // ── 4. 상태 변경 (이전과 다를 때만) ──────────────────────────────────
-    if row.status != new_status {
+    // ── 4. 상태 변경 or IP 변경 시 enforcement 재발행 ────────────────────
+    let status_changed = row.status != new_status;
+    // IP가 바뀌었고 이미 차단/격리 상태면 enforcement 재발행 필요
+    let needs_enforcement_update = ip_changed
+        && matches!(row.status, _ if ["denied", "quarantined"].contains(&row.status.as_str()));
+
+    if status_changed {
         endpoint_repo.set_status(row.id, new_status).await?;
 
         info!(
@@ -156,7 +196,6 @@ async fn process_event(nats: &Client, pool: &PgPool, event: EndpointDetectedEven
             "endpoint status changed"
         );
 
-        // 감사 로그: 정책 결정
         audit_repo
             .log(
                 "policy_decision",
@@ -171,7 +210,6 @@ async fn process_event(nats: &Client, pool: &PgPool, event: EndpointDetectedEven
             )
             .await?;
 
-        // 격리(quarantine) 상태로 전환 시 새 세션 생성
         if new_status == "quarantined" {
             let vlan_id = match &decision {
                 PolicyDecision::Quarantine { vlan, .. } => Some(*vlan as i16),
@@ -199,18 +237,24 @@ async fn process_event(nats: &Client, pool: &PgPool, event: EndpointDetectedEven
             }
         }
 
-        // enforcement 명령 발행 (상태 변경 시)
-        publish_enforcement_command(
-            nats,
-            &row.mac_address,
-            &row.ip_address,
-            new_status,
-            &decision,
-        )
-        .await;
+        publish_enforcement_command(nats, &row.mac_address, &new_ip, new_status, &decision).await;
+    } else if needs_enforcement_update {
+        // 상태 변경 없이 IP만 바뀐 경우: enforcement에 새 IP로 재발행
+        info!(
+            mac    = %row.mac_address,
+            status = %row.status,
+            new_ip = ?new_ip,
+            "re-publishing enforcement for IP change"
+        );
+        publish_enforcement_command(nats, &row.mac_address, &new_ip, &row.status, &decision).await;
     }
 
     Ok(())
+}
+
+/// CIDR 접미사 제거: "192.168.0.2/32" → "192.168.0.2"
+fn strip_cidr(ip: String) -> String {
+    ip.split('/').next().unwrap_or(&ip).to_string()
 }
 
 /// enforcement 서비스에 ARP 명령 발행
@@ -234,11 +278,17 @@ async fn publish_enforcement_command(
         _ => None,
     };
 
+    // CIDR 제거: DB의 INET 타입이 "192.168.0.2/32" 형태일 수 있음
+    let ip_str = ip
+        .as_deref()
+        .map(|s| s.split('/').next().unwrap_or(s))
+        .unwrap_or("");
+
     let cmd = json!({
         "mac_address": mac,
-        "ip_address": ip.as_deref().unwrap_or(""),
+        "ip_address": ip_str,
         "action": action,
-        "gateway_ip": "", // 게이트웨이 IP는 설정에서 가져와야 함 (향후 확장)
+        "gateway_ip": "",
         "gateway_mac": null,
         "vlan_id": vlan_id,
     });

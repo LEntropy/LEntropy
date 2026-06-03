@@ -92,6 +92,25 @@ fn execute_command(
 ) -> Result<()> {
     let action = map_action(&cmd.action);
 
+    // ── IP 변경 시 이전 IP를 nftables set에서 제거 ───────────────────────
+    if !cmd.ip_address.is_empty() && cmd.ip_address != "0.0.0.0" {
+        let old_ip = state
+            .lock()
+            .unwrap()
+            .get(&cmd.mac_address.to_lowercase())
+            .map(|e| e.victim_ip);
+        if let Some(old_ip) = old_ip {
+            let new_ip_parsed = cmd.ip_address.parse::<std::net::Ipv4Addr>().ok();
+            if let Some(new_ip) = new_ip_parsed {
+                if old_ip != new_ip {
+                    let old_str = old_ip.to_string();
+                    ipt.remove_ip(&old_str);
+                    info!(mac = %cmd.mac_address, old_ip = %old_ip, new_ip = %new_ip, "IP changed — old IP removed from sets");
+                }
+            }
+        }
+    }
+
     // ── iptables (primary enforcement) ──────────────────────────────────────
     let ip_opt = if cmd.ip_address.is_empty() || cmd.ip_address == "0.0.0.0" {
         None

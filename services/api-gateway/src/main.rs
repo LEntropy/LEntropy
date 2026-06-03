@@ -72,8 +72,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/users/{id}", delete(delete_user))
         .route("/users/{id}/password", put(change_password))
         .route("/users/{id}/{action}", post(set_user_enabled))
-        // Network (네트워크 관리)
+        // Network (네트워크 관리 + IP 차단 규칙)
         .route("/network/hosts", get(list_network_hosts))
+        .route("/network/ip-rules", get(list_ip_rules).post(create_ip_rule))
+        .route("/network/ip-rules/{id}", delete(delete_ip_rule))
+        .route("/network/ip-rules/{id}/{action}", post(set_ip_rule_enabled))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_auth,
@@ -343,6 +346,46 @@ async fn list_network_hosts(
     proxy_get(
         &state.policy_manager_url,
         &format!("/api/v1/network/hosts{qs}"),
+    )
+    .await
+}
+
+async fn list_ip_rules(State(state): State<Arc<AppState>>) -> Result<Response, StatusCode> {
+    proxy_get(&state.policy_manager_url, "/api/v1/network/ip-rules").await
+}
+
+async fn create_ip_rule(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Response, StatusCode> {
+    proxy_post_body(
+        &state.policy_manager_url,
+        "/api/v1/network/ip-rules",
+        headers,
+        body,
+    )
+    .await
+}
+
+async fn delete_ip_rule(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Response, StatusCode> {
+    proxy_delete(
+        &state.policy_manager_url,
+        &format!("/api/v1/network/ip-rules/{id}"),
+    )
+    .await
+}
+
+async fn set_ip_rule_enabled(
+    State(state): State<Arc<AppState>>,
+    Path((id, action)): Path<(String, String)>,
+) -> Result<Response, StatusCode> {
+    proxy_post(
+        &state.policy_manager_url,
+        &format!("/api/v1/network/ip-rules/{id}/{action}"),
     )
     .await
 }

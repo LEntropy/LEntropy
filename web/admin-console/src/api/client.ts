@@ -131,9 +131,24 @@ export interface HostEntry {
   last_seen: string | null
 }
 
+export interface IpRule {
+  id: string
+  ip_cidr: string
+  action: 'block' | 'quarantine'
+  note: string | null
+  enabled: boolean
+  created_at: string
+}
+
 export const networkApi = {
   hosts: (subnet?: string) =>
     api.get<HostEntry[]>(`/network/hosts${subnet ? `?subnet=${encodeURIComponent(subnet)}` : ''}`),
+  listIpRules: () => api.get<IpRule[]>('/network/ip-rules'),
+  createIpRule: (data: { ip_cidr: string; action: 'block' | 'quarantine'; note?: string }) =>
+    api.post<IpRule>('/network/ip-rules', data),
+  deleteIpRule: (id: string) => api.delete(`/network/ip-rules/${id}`),
+  enableIpRule: (id: string) => api.post(`/network/ip-rules/${id}/enable`),
+  disableIpRule: (id: string) => api.post(`/network/ip-rules/${id}/disable`),
 }
 
 // ── 사용자 관리 ───────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ const ARP_SYNC_INTERVAL_SECS: u64 = 20;
 const RECONCILE_DELAY_SECS: u64 = 6;
 const ARP_PATH_HOST: &str = "/host/proc/net/arp";
 const ARP_PATH_FALLBACK: &str = "/proc/net/arp";
+const ROUTE_PATH: &str = "/proc/net/route";
 const ENDPOINT_DETECTED_SUBJECT: &str = "nac.events.endpoint.detected";
 const ENFORCEMENT_SUBJECT: &str = "nac.commands.enforcement";
 
@@ -74,6 +75,35 @@ async fn reconcile(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// /proc/net/route에서 기본 게이트웨이 IP 목록을 수집.
+/// ARP 동기화에서 게이트웨이가 "신규 단말"로 오인식되지 않도록 제외 목록 생성.
+fn detect_default_gateways() -> std::collections::HashSet<String> {
+    let mut gateways = std::collections::HashSet::new();
+    let Ok(content) = std::fs::read_to_string(ROUTE_PATH) else {
+        return gateways;
+    };
+    for line in content.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let dest = match u32::from_str_radix(parts[1], 16) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let gw = match u32::from_str_radix(parts[2], 16) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if dest == 0 && gw != 0 {
+            let bytes = gw.to_le_bytes();
+            let ip = format!("{}.{}.{}.{}", bytes[0], bytes[1], bytes[2], bytes[3]);
+            gateways.insert(ip);
+        }
+    }
+    gateways
+}
+
 /// 주기적으로 ARP 테이블 스캔.
 /// - 신규 단말: NATS 이벤트 발행 (정책 평가 트리거)
 /// - IP 변경 단말: DB 직접 업데이트 (NATS 이벤트 금지 → 피드백 루프 방지)
@@ -129,6 +159,10 @@ async fn arp_sync(
 
     debug!(entries = arp_map.len(), "ARP sync: table read");
 
+    // 기본 게이트웨이 IP는 NAC 관리 대상에서 제외 — 게이트웨이가 차단되면 Pi 자체의
+    // 인터넷 연결이 끊기기 때문에 절대 endpoint로 등록하지 않는다.
+    let gateway_ips = detect_default_gateways();
+
     let now_ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -148,6 +182,13 @@ async fn arp_sync(
     pending_ip.retain(|mac, _| arp_map.values().any(|m| m == mac));
 
     for (ip, mac) in &arp_map {
+        // 게이트웨이 IP는 절대 endpoint로 등록하지 않음
+        if gateway_ips.contains(ip) {
+            debug!(ip = %ip, "ARP sync: skipping default gateway");
+            pending_ip.remove(mac);
+            continue;
+        }
+
         let current_ip = existing_map.get(mac).and_then(|opt_ip| {
             opt_ip
                 .as_deref()

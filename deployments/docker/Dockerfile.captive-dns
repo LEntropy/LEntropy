@@ -1,0 +1,10 @@
+FROM alpine:3.20
+RUN apk add --no-cache dnsmasq
+# NAC_IP는 docker-compose에서 주입 (기본값 192.168.0.39)
+ARG NAC_IP=192.168.0.39
+RUN echo "port=5353" > /etc/dnsmasq.conf && \
+    echo "no-resolv" >> /etc/dnsmasq.conf && \
+    echo "no-poll" >> /etc/dnsmasq.conf && \
+    echo "bogus-priv" >> /etc/dnsmasq.conf && \
+    echo "address=/#/${NAC_IP}" >> /etc/dnsmasq.conf
+CMD ["dnsmasq", "--no-daemon", "--log-facility=-"]

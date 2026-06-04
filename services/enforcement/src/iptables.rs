@@ -28,6 +28,7 @@ const SET_QUARANTINE: &str = "quarantined_macs";
 const SET_BLOCK_IP: &str = "blocked_ips";
 const SET_QUARANTINE_IP: &str = "quarantined_ips";
 const CAPTIVE_PORT: &str = "8080";
+const CAPTIVE_DNS_PORT: &str = "5353";
 
 // iptables-legacy 용 체인 이름
 const CHAIN_BLOCK: &str = "NAC_BLOCK";
@@ -163,11 +164,25 @@ fn setup_nft(management_ips: &[&str]) -> Result<()> {
             management_ips.join(", ")
         )
     };
-    let ssh_rule = if management_ips.is_empty() {
-        format!("add rule inet {NFT_TABLE} nac_input tcp dport 22 accept\n")
-    } else {
+    // 관리 포트: SSH(22) + 관리자 페이지(3000, 8000, 8001)
+    // 차단된 단말이어도 관리자는 접근 가능하도록 drop 규칙보다 먼저 배치
+    let mgmt_port_rules = if management_ips.is_empty() {
+        // 개발 모드: 모든 IP에서 관리 포트 허용
         format!(
-            "add rule inet {NFT_TABLE} nac_input ip saddr @management_ips tcp dport 22 accept\n"
+            "add rule inet {t} nac_input tcp dport 22 accept\n\
+             add rule inet {t} nac_input tcp dport 3000 accept\n\
+             add rule inet {t} nac_input tcp dport 8000 accept\n\
+             add rule inet {t} nac_input tcp dport 8001 accept\n",
+            t = NFT_TABLE
+        )
+    } else {
+        // 운영 모드: management_ips 에서만 허용
+        format!(
+            "add rule inet {t} nac_input ip saddr @management_ips tcp dport 22 accept\n\
+             add rule inet {t} nac_input ip saddr @management_ips tcp dport 3000 accept\n\
+             add rule inet {t} nac_input ip saddr @management_ips tcp dport 8000 accept\n\
+             add rule inet {t} nac_input ip saddr @management_ips tcp dport 8001 accept\n",
+            t = NFT_TABLE
         )
     };
 
@@ -182,23 +197,31 @@ add set inet {t} {sqi} {{ type ipv4_addr; }}
 add set inet {t} management_ips {{ type ipv4_addr; }}
 add chain inet {t} nac_prerouting {{ type nat hook prerouting priority dstnat; }}
 flush chain inet {t} nac_prerouting
+add rule inet {t} nac_prerouting ether saddr @{sb} udp dport 53 redirect to :{cdp}
+add rule inet {t} nac_prerouting ether saddr @{sb} tcp dport 53 redirect to :{cdp}
+add rule inet {t} nac_prerouting ether saddr @{sq} udp dport 53 redirect to :{cdp}
+add rule inet {t} nac_prerouting ether saddr @{sq} tcp dport 53 redirect to :{cdp}
+add rule inet {t} nac_prerouting ip saddr @{sbi} udp dport 53 redirect to :{cdp}
+add rule inet {t} nac_prerouting ip saddr @{sbi} tcp dport 53 redirect to :{cdp}
+add rule inet {t} nac_prerouting ip saddr @{sqi} udp dport 53 redirect to :{cdp}
+add rule inet {t} nac_prerouting ip saddr @{sqi} tcp dport 53 redirect to :{cdp}
+add rule inet {t} nac_prerouting ether saddr @{sb} tcp dport 80 redirect to :{cp}
+add rule inet {t} nac_prerouting ether saddr @{sq} tcp dport 80 redirect to :{cp}
 add rule inet {t} nac_prerouting ip saddr @{sbi} tcp dport 80 redirect to :{cp}
 add rule inet {t} nac_prerouting ip saddr @{sqi} tcp dport 80 redirect to :{cp}
 add chain inet {t} nac_forward {{ type filter hook forward priority -100; policy accept; }}
 flush chain inet {t} nac_forward
-add rule inet {t} nac_forward ether saddr @{sb} udp dport 53 accept
 add rule inet {t} nac_forward ether saddr @{sb} drop
-add rule inet {t} nac_forward ether saddr @{sq} udp dport 53 accept
-add rule inet {t} nac_forward ether saddr @{sq} tcp dport {cp} accept
 add rule inet {t} nac_forward ether saddr @{sq} drop
-add rule inet {t} nac_forward ip saddr @{sbi} udp dport 53 accept
 add rule inet {t} nac_forward ip saddr @{sbi} drop
-add rule inet {t} nac_forward ip saddr @{sqi} udp dport 53 accept
-add rule inet {t} nac_forward ip saddr @{sqi} tcp dport {cp} accept
 add rule inet {t} nac_forward ip saddr @{sqi} drop
 add chain inet {t} nac_input {{ type filter hook input priority -100; policy accept; }}
 flush chain inet {t} nac_input
-{mgmt_elems}{ssh_rule}add rule inet {t} nac_input ip saddr @{sbi} tcp dport {cp} accept
+{mgmt_elems}{mgmt_port_rules}add rule inet {t} nac_input udp dport {cdp} accept
+add rule inet {t} nac_input tcp dport {cdp} accept
+add rule inet {t} nac_input ether saddr @{sb} tcp dport {cp} accept
+add rule inet {t} nac_input ether saddr @{sq} tcp dport {cp} accept
+add rule inet {t} nac_input ip saddr @{sbi} tcp dport {cp} accept
 add rule inet {t} nac_input ip saddr @{sqi} tcp dport {cp} accept
 add rule inet {t} nac_input ether saddr @{sb} drop
 add rule inet {t} nac_input ip saddr @{sbi} drop
@@ -213,8 +236,9 @@ add rule ip {t}_nat nac_postrouting masquerade
         sbi = SET_BLOCK_IP,
         sqi = SET_QUARANTINE_IP,
         cp = CAPTIVE_PORT,
+        cdp = CAPTIVE_DNS_PORT,
         mgmt_elems = mgmt_elems_line,
-        ssh_rule = ssh_rule,
+        mgmt_port_rules = mgmt_port_rules,
     );
 
     let mut child = Command::new("nft")

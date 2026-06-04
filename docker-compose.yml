@@ -134,6 +134,19 @@ services:
       policy-manager:
         condition: service_started
 
+  # 캡티브 포털 DNS: 차단/격리 단말의 모든 DNS 쿼리를 Pi IP로 응답
+  # nftables가 UDP/TCP 53 → :5353 으로 리다이렉트한다
+  captive-dns:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.captive-dns
+      args:
+        NAC_IP: "192.168.0.39"   # Pi 주소 — IP 변경 시 수정 후 재빌드
+    network_mode: host            # 호스트 포트 5353에 바인딩
+    restart: unless-stopped
+    depends_on:
+      - nats
+
   enforcement:
     build:
       context: .

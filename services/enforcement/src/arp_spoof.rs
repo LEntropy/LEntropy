@@ -42,8 +42,9 @@ impl Spoofer {
 
     /// ARP 격리: 피해자와 게이트웨이 모두에게 enforcement_mac으로 독살
     ///
-    /// - 피해자에게: "게이트웨이 IP = enforcement_mac"
-    /// - 게이트웨이에게: "피해자 IP = enforcement_mac" (broadcast)
+    /// - 피해자에게 unicast: "게이트웨이 IP = enforcement_mac"
+    /// - 게이트웨이에게 unicast: "피해자 IP = enforcement_mac"
+    ///   (broadcast 대신 unicast를 사용해 LAN 전체 ARP 캐시 오염 방지)
     pub fn quarantine(
         &mut self,
         victim_ip: Ipv4Addr,
@@ -52,7 +53,7 @@ impl Spoofer {
     ) -> Result<()> {
         let my_mac = self.mac;
 
-        // 피해자에게 보냄: gateway_ip가 enforcement_mac 인척
+        // 피해자에게 unicast: gateway_ip가 enforcement_mac 인척
         let frame_to_victim =
             craft_arp_reply(victim_mac, my_mac, gateway_ip, victim_mac, victim_ip)?;
         self.send_frame(&frame_to_victim)?;
@@ -64,15 +65,17 @@ impl Spoofer {
             "sent ARP poison to victim: gateway_ip -> enforcement_mac"
         );
 
-        // 게이트웨이에게 보냄: victim_ip가 enforcement_mac 인척 (broadcast dst)
-        let broadcast = [0xff; 6];
-        let frame_to_gw = craft_arp_reply(broadcast, my_mac, victim_ip, broadcast, gateway_ip)?;
+        // 게이트웨이에게 unicast: victim_ip가 enforcement_mac 인척
+        // broadcast를 쓰면 LAN 전체 ARP 캐시가 오염되어 네트워크 불안정 발생
+        let gw_mac = arp_mac_lookup(gateway_ip).unwrap_or([0xff; 6]);
+        let frame_to_gw = craft_arp_reply(gw_mac, my_mac, victim_ip, gw_mac, gateway_ip)?;
         self.send_frame(&frame_to_gw)?;
 
         debug!(
             iface = %self.iface_name,
             victim_ip = %victim_ip,
             gateway_ip = %gateway_ip,
+            gw_mac_known = gw_mac != [0xff; 6],
             "sent ARP poison to gateway: victim_ip -> enforcement_mac"
         );
 
@@ -90,31 +93,32 @@ impl Spoofer {
     ) -> Result<()> {
         let my_mac = self.mac;
 
-        // 피해자에게 보냄: gateway_ip가 enforcement_mac 인척
+        // 피해자에게 unicast: gateway_ip가 enforcement_mac 인척
         let frame_to_victim =
             craft_arp_reply(victim_mac, my_mac, gateway_ip, victim_mac, victim_ip)?;
         self.send_frame(&frame_to_victim)?;
 
-        // 게이트웨이에게 보냄: victim_ip가 enforcement_mac 인척 (broadcast dst)
-        let broadcast = [0xff; 6];
-        let frame_to_gw = craft_arp_reply(broadcast, my_mac, victim_ip, broadcast, gateway_ip)?;
+        // 게이트웨이에게 unicast: victim_ip가 enforcement_mac 인척
+        let gw_mac = arp_mac_lookup(gateway_ip).unwrap_or([0xff; 6]);
+        let frame_to_gw = craft_arp_reply(gw_mac, my_mac, victim_ip, gw_mac, gateway_ip)?;
         self.send_frame(&frame_to_gw)?;
 
         debug!(
             iface = %self.iface_name,
             victim_ip = %victim_ip,
             gateway_ip = %gateway_ip,
+            gw_mac_known = gw_mac != [0xff; 6],
             "sent ARP poison (block): victim and gateway both redirected to enforcement_mac"
         );
 
         Ok(())
     }
 
-    /// ARP 복구: 피해자 + 네트워크 전체 ARP 캐시 정상화
+    /// ARP 복구: 피해자 + 게이트웨이 ARP 캐시 정상화
     ///
     /// 1. 피해자에게 unicast: "gateway_ip는 gateway_mac에 있다" (ARP MITM 복구)
-    /// 2. 브로드캐스트 gratuitous ARP: "victim_ip는 victim_mac에 있다"
-    ///    → 공유기·스위치 등 모든 기기의 오염된 ARP 캐시 복구
+    /// 2. 게이트웨이에게 unicast: "victim_ip는 victim_mac에 있다" (게이트웨이 ARP 복구)
+    /// 3. 브로드캐스트 gratuitous ARP: 혹시 이전 broadcast 독살로 오염된 다른 기기 복구
     pub fn allow(
         &mut self,
         victim_ip: Ipv4Addr,
@@ -127,9 +131,12 @@ impl Spoofer {
             craft_arp_reply(victim_mac, gateway_mac, gateway_ip, victim_mac, victim_ip)?;
         self.send_frame(&frame_to_victim)?;
 
-        // 2. 네트워크 브로드캐스트: victim_ip → victim_mac 임을 알림
-        //    공유기가 "victim_ip = Pi의 MAC"으로 잘못 기억하고 있는 것을 바로잡는다.
-        //    SHA=victim_mac, SPA=victim_ip 로 spoofing하여 모든 기기 ARP 갱신.
+        // 2. 게이트웨이에게 unicast: victim_ip → victim_mac 복구
+        let frame_to_gw =
+            craft_arp_reply(gateway_mac, victim_mac, victim_ip, gateway_mac, gateway_ip)?;
+        self.send_frame(&frame_to_gw)?;
+
+        // 3. 브로드캐스트 gratuitous ARP: 이전 broadcast 독살로 오염된 다른 기기 ARP 복구
         let corrective = craft_gratuitous_arp(victim_mac, victim_ip, victim_ip)?;
         self.send_frame(&corrective)?;
 
@@ -138,7 +145,7 @@ impl Spoofer {
             victim_ip = %victim_ip,
             victim_mac = ?victim_mac,
             gateway_ip = %gateway_ip,
-            "sent ARP restore: victim unicast + broadcast gratuitous"
+            "sent ARP restore: victim unicast + gateway unicast + broadcast gratuitous"
         );
 
         Ok(())
@@ -156,4 +163,26 @@ impl Spoofer {
     pub fn my_mac(&self) -> [u8; 6] {
         self.mac
     }
+}
+
+/// /proc/net/arp에서 IP에 해당하는 MAC을 조회.
+/// 게이트웨이에게 unicast ARP를 보낼 때 사용.
+fn arp_mac_lookup(ip: Ipv4Addr) -> Option<[u8; 6]> {
+    let content = std::fs::read_to_string("/proc/net/arp").ok()?;
+    let ip_str = ip.to_string();
+    for line in content.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 4 && parts[0] == ip_str && parts[3] != "00:00:00:00:00:00" {
+            let bytes: Vec<u8> = parts[3]
+                .split(':')
+                .filter_map(|h| u8::from_str_radix(h, 16).ok())
+                .collect();
+            if bytes.len() == 6 {
+                let mut arr = [0u8; 6];
+                arr.copy_from_slice(&bytes);
+                return Some(arr);
+            }
+        }
+    }
+    None
 }

@@ -1,5 +1,6 @@
 /// 백그라운드 태스크: 시작 시 enforcement 재조정 + 주기적 ARP 동기화
 use async_nats::Client;
+use nac_store::endpoint::EndpointRepo;
 use serde_json::json;
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -73,18 +74,27 @@ async fn reconcile(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 주기적으로 ARP 테이블 스캔 → NATS 이벤트 발행 (기존 consumer가 처리)
+/// 주기적으로 ARP 테이블 스캔.
+/// - 신규 단말: NATS 이벤트 발행 (정책 평가 트리거)
+/// - IP 변경 단말: DB 직접 업데이트 (NATS 이벤트 금지 → 피드백 루프 방지)
+///   단, 2회 연속 같은 IP가 확인되어야 확정 (oscillation debounce)
 pub async fn run_arp_sync(nats: Client, pool: PgPool) {
     let mut ticker = interval(Duration::from_secs(ARP_SYNC_INTERVAL_SECS));
+    // MAC → 후보 IP (다음 사이클에도 동일하면 확정)
+    let mut pending_ip: HashMap<String, String> = HashMap::new();
     loop {
         ticker.tick().await;
-        if let Err(e) = arp_sync(&nats, &pool).await {
+        if let Err(e) = arp_sync(&nats, &pool, &mut pending_ip).await {
             warn!(error = %e, "ARP sync error");
         }
     }
 }
 
-async fn arp_sync(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
+async fn arp_sync(
+    nats: &Client,
+    pool: &PgPool,
+    pending_ip: &mut HashMap<String, String>,
+) -> anyhow::Result<()> {
     let arp_path = if std::path::Path::new(ARP_PATH_HOST).exists() {
         ARP_PATH_HOST
     } else {
@@ -111,7 +121,6 @@ async fn arp_sync(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
         if mac == "00:00:00:00:00:00" {
             continue;
         }
-        // 도커 브리지/루프백 제외
         if ip.starts_with("172.") || ip.starts_with("127.") || ip.starts_with("169.254.") {
             continue;
         }
@@ -125,8 +134,6 @@ async fn arp_sync(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
 
-    // DB에서 기존 단말 MAC 조회
-    // MACADDR/INET 타입 → TEXT 캐스팅 필요
     let existing: Vec<(String, Option<String>)> =
         sqlx::query_as("SELECT mac_address::TEXT, ip_address::TEXT FROM endpoints")
             .fetch_all(pool)
@@ -136,6 +143,9 @@ async fn arp_sync(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
         .into_iter()
         .map(|(mac, ip)| (mac.to_lowercase(), ip))
         .collect();
+
+    // 현재 ARP 테이블에 없는 MAC의 pending 항목 제거
+    pending_ip.retain(|mac, _| arp_map.values().any(|m| m == mac));
 
     for (ip, mac) in &arp_map {
         let current_ip = existing_map.get(mac).and_then(|opt_ip| {
@@ -147,8 +157,8 @@ async fn arp_sync(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
         let is_new = !existing_map.contains_key(mac);
         let ip_changed = !is_new && current_ip.as_deref() != Some(ip.as_str());
 
-        if is_new || ip_changed {
-            // consumer.rs의 process_event 로직 재사용 — NATS 이벤트로 발행
+        if is_new {
+            // 신규 단말만 NATS 이벤트 발행 (정책 평가 트리거)
             let event = json!({
                 "mac_address": mac,
                 "ip_address": ip,
@@ -160,12 +170,61 @@ async fn arp_sync(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
                 nats.publish(ENDPOINT_DETECTED_SUBJECT, payload.into())
                     .await
                     .ok();
-                if is_new {
-                    info!(mac = %mac, ip = %ip, "ARP sync: new endpoint discovered");
-                } else {
-                    info!(mac = %mac, old_ip = ?current_ip, new_ip = %ip, "ARP sync: IP changed");
-                }
+                info!(mac = %mac, ip = %ip, "ARP sync: new endpoint discovered");
             }
+            pending_ip.remove(mac);
+        } else if ip_changed {
+            // IP 변경: NATS 이벤트 발행하지 않음 (피드백 루프 방지)
+            // 2회 연속 같은 IP 확인 후 DB 직접 업데이트 (oscillation debounce)
+            let prev_candidate = pending_ip.get(mac).map(|s| s.as_str());
+            if prev_candidate == Some(ip.as_str()) {
+                // 2회 연속 확인 → 확정
+                info!(
+                    mac = %mac,
+                    old_ip = ?current_ip,
+                    new_ip = %ip,
+                    "ARP sync: IP change confirmed — updating DB directly"
+                );
+
+                if let Err(e) = sqlx::query(
+                    "UPDATE endpoints SET ip_address = $1::inet, last_seen = NOW() \
+                     WHERE mac_address = $2::macaddr",
+                )
+                .bind(ip)
+                .bind(mac)
+                .execute(pool)
+                .await
+                {
+                    warn!(error = %e, mac = %mac, "ARP sync: DB IP update failed");
+                }
+
+                // 차단/격리 단말: 새 IP로 enforcement 직접 재발행
+                let repo = EndpointRepo::new(pool);
+                if let Ok(Some(ep)) = repo.find_by_mac(mac).await {
+                    let action = match ep.status.as_str() {
+                        "denied" => Some("block"),
+                        "quarantined" => Some("quarantine"),
+                        _ => None,
+                    };
+                    if let Some(action) = action {
+                        publish_enforcement(nats, mac, ip, action).await;
+                        debug!(mac = %mac, action, new_ip = %ip, "ARP sync: enforcement re-sent for IP change");
+                    }
+                }
+
+                pending_ip.remove(mac);
+            } else {
+                // 처음 본 IP 변경 → 후보 등록, 다음 사이클에 재확인
+                debug!(
+                    mac = %mac,
+                    candidate_ip = %ip,
+                    "ARP sync: IP change pending confirmation"
+                );
+                pending_ip.insert(mac.clone(), ip.clone());
+            }
+        } else {
+            // IP 안정 → 후보 초기화
+            pending_ip.remove(mac);
         }
     }
 
@@ -183,7 +242,7 @@ async fn publish_enforcement(nats: &Client, mac: &str, ip: &str, action: &str) {
     });
     if let Ok(payload) = serde_json::to_vec(&cmd) {
         if let Err(e) = nats.publish(ENFORCEMENT_SUBJECT, payload.into()).await {
-            warn!(error = %e, mac = %mac, "reconciliation: failed to publish");
+            warn!(error = %e, mac = %mac, "failed to publish enforcement command");
         }
     }
 }

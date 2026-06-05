@@ -105,7 +105,14 @@ async fn main() -> Result<()> {
 
         // 상태 보고
         match transport
-            .report_status(&sw_list, usb, bluetooth, sharing)
+            .report_status(
+                &sw_list,
+                usb,
+                bluetooth,
+                sharing,
+                &sys.os_name,
+                &sys.os_version,
+            )
             .await
         {
             Ok(action) => {

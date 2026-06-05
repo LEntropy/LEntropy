@@ -26,6 +26,8 @@ message StatusReport {
   bool usb_enabled = 4;
   bool bluetooth_enabled = 5;
   bool folder_sharing_enabled = 6;
+  string os = 7;
+  string os_version = 8;
 }
 
 message SoftwareItem {

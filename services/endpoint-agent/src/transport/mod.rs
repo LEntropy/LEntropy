@@ -58,6 +58,8 @@ impl AgentTransport {
         usb_enabled: bool,
         bluetooth_enabled: bool,
         folder_sharing_enabled: bool,
+        os: &str,
+        os_version: &str,
     ) -> Result<String> {
         let installed_software = software
             .iter()
@@ -74,6 +76,8 @@ impl AgentTransport {
             usb_enabled,
             bluetooth_enabled,
             folder_sharing_enabled,
+            os: os.to_string(),
+            os_version: os_version.to_string(),
         };
 
         let mut request = tonic::Request::new(payload);

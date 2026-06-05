@@ -149,8 +149,8 @@ impl AgentService for AgentServiceImpl {
 
         let report = PostureReport {
             device_id: req.device_id.clone(),
-            os: String::new(),
-            os_version: String::new(),
+            os: req.os.clone(),
+            os_version: req.os_version.clone(),
             installed_software,
             missing_patches,
             usb_enabled: req.usb_enabled,
@@ -195,13 +195,25 @@ impl AgentService for AgentServiceImpl {
         let req = request.into_inner();
         debug!(device_id = %req.device_id, "agent get policy");
 
+        let repo = EndpointRepo::new(&self.pool);
+        let status = match repo.find_by_agent_id(&req.device_id).await {
+            Ok(Some(ep)) => ep.status,
+            _ => "allowed".to_string(),
+        };
+
+        let (allow_usb, allow_bluetooth, allow_folder_sharing) = match status.as_str() {
+            "denied" => (false, false, false),
+            "quarantined" => (false, false, false),
+            _ => (true, true, false),
+        };
+
         Ok(Response::new(AgentPolicyResponse {
             required_software: vec![],
             forbidden_software: vec![],
-            require_patches: true,
-            allow_usb: true,
-            allow_bluetooth: true,
-            allow_folder_sharing: false,
+            require_patches: false,
+            allow_usb,
+            allow_bluetooth,
+            allow_folder_sharing,
         }))
     }
 }

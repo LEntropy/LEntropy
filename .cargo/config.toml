@@ -1,8 +1,13 @@
 [build]
-# lld 링커로 빌드 속도 개선 (Linux)
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 # incremental 컴파일 활성화 (dev 빌드)
 incremental = true
+
+# lld 링커 — Linux 타겟에만 적용 (Windows MSVC/GNU 빌드 시 충돌 방지)
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
 [profile.dev]
 # 디버그 빌드: 최소 최적화 + 전체 디버그 정보

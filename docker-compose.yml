@@ -142,6 +142,7 @@ services:
       dockerfile: deployments/docker/Dockerfile.captive-dns
       args:
         NAC_IP: "192.168.0.39"   # Pi 주소 — IP 변경 시 수정 후 재빌드
+    command: ["dnsmasq", "--no-daemon", "--port=5353", "--address=/#/192.168.0.39", "--no-resolv", "--no-poll", "--log-facility=-"]
     network_mode: host            # 호스트 포트 5353에 바인딩
     restart: unless-stopped
     depends_on:

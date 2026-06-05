@@ -15,7 +15,7 @@ use futures_util::StreamExt;
 use nac_policy_engine::evaluator;
 use nac_policy_engine::PolicyDecision;
 use nac_store::audit::AuditRepo;
-use nac_store::endpoint::EndpointRepo;
+use nac_store::endpoint::{EndpointRepo, UpsertEndpoint};
 use nac_store::policy::{decision_to_status, PolicyRepo};
 use nac_store::session::SessionRepo;
 use serde::Deserialize;
@@ -33,6 +33,8 @@ pub struct AuthResponse {
     pub session_id: Option<Uuid>,
     pub endpoint_id: Option<Uuid>,
     pub mac_address: String,
+    #[serde(default)]
+    pub ip_address: String,
     pub success: bool,
     pub username: Option<String>,
     pub groups: Vec<String>,
@@ -84,8 +86,34 @@ async fn process_auth_response(nats: &Client, pool: &PgPool, resp: AuthResponse)
     let endpoint = match endpoint {
         Some(ep) => ep,
         None => {
-            warn!(mac = %resp.mac_address, "endpoint not found for auth response");
-            return Ok(());
+            // 캡티브 포털 인증 시 ARP sync 전에 로그인할 수 있음 — 자동 등록
+            if resp.mac_address.is_empty() {
+                warn!(ip = %resp.ip_address, "endpoint not found and no MAC in auth response");
+                return Ok(());
+            }
+            info!(
+                mac = %resp.mac_address,
+                ip  = %resp.ip_address,
+                "endpoint not in DB — auto-registering from auth event"
+            );
+            let ip_opt = if resp.ip_address.is_empty() {
+                None
+            } else {
+                Some(resp.ip_address.clone())
+            };
+            endpoint_repo
+                .upsert(&UpsertEndpoint {
+                    mac_address: resp.mac_address.clone(),
+                    ip_address: ip_opt,
+                    hostname: None,
+                    os_family: None,
+                    os_version: None,
+                    device_type: None,
+                    vendor: None,
+                    interface: None,
+                    agent_id: None,
+                })
+                .await?
         }
     };
 

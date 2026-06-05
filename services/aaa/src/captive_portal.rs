@@ -67,6 +67,20 @@ async fn health() -> impl IntoResponse {
     axum::Json(json!({"status": "ok"}))
 }
 
+/// DB에서 IP로 엔드포인트 MAC 조회 (캡티브 포털 로그인 시 MAC 특정용)
+async fn mac_from_db(pool: &PgPool, ip: &str) -> Option<String> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT mac_address::TEXT FROM endpoints \
+         WHERE ip_address = $1 OR ip_address = $2 LIMIT 1",
+    )
+    .bind(format!("{ip}/32"))
+    .bind(ip)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
 /// DB에서 IP로 엔드포인트 상태 조회
 async fn endpoint_status(pool: &PgPool, ip: &str) -> Option<String> {
     sqlx::query_scalar::<_, String>(
@@ -131,6 +145,7 @@ async fn landing_page(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
     let ip = addr.ip().to_string();
+    let mac = mac_from_db(&state.pool, &ip).await.unwrap_or_default();
     match endpoint_status(&state.pool, &ip).await.as_deref() {
         Some("denied") => {
             info!(ip, "blocked endpoint accessed captive portal");
@@ -138,9 +153,9 @@ async fn landing_page(
         }
         Some("quarantined") => {
             info!(ip, "quarantined endpoint accessing captive portal");
-            Html(LOGIN_HTML).into_response()
+            Html(login_html(&mac)).into_response()
         }
-        _ => Html(LOGIN_HTML).into_response(),
+        _ => Html(login_html(&mac)).into_response(),
     }
 }
 
@@ -183,12 +198,21 @@ struct AuthResponseEvent {
     reason: Option<String>,
 }
 
-async fn handle_login(State(state): State<SharedState>, Form(form): Form<LoginForm>) -> Response {
-    let mac = form
-        .mac
-        .clone()
-        .or_else(|| state.default_mac.clone())
-        .unwrap_or_default();
+async fn handle_login(
+    State(state): State<SharedState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Form(form): Form<LoginForm>,
+) -> Response {
+    let client_ip = addr.ip().to_string();
+    let mac = if let Some(m) = form.mac.as_deref().filter(|m| !m.is_empty()) {
+        m.to_string()
+    } else if let Some(m) = state.default_mac.clone() {
+        m
+    } else {
+        mac_from_db(&state.pool, &client_ip)
+            .await
+            .unwrap_or_default()
+    };
 
     info!(username = %form.username, mac = %mac, "login attempt");
 
@@ -300,7 +324,11 @@ async fn publish_auth_response(nats: &NatsClient, event: &AuthResponseEvent, _to
 
 // ── Static HTML ───────────────────────────────────────────────────────────────
 
-static LOGIN_HTML: &str = r##"<!DOCTYPE html>
+fn login_html(mac: &str) -> String {
+    LOGIN_HTML_TEMPLATE.replace("{{MAC}}", mac)
+}
+
+static LOGIN_HTML_TEMPLATE: &str = r##"<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -360,6 +388,7 @@ static LOGIN_HTML: &str = r##"<!DOCTYPE html>
   <h1>네트워크 접속 인증</h1>
   <p>이 네트워크를 사용하려면 로그인이 필요합니다.</p>
   <form method="POST" action="/login">
+    <input type="hidden" name="mac" value="{{MAC}}">
     <label for="username">사용자명</label>
     <input type="text" id="username" name="username" placeholder="사용자명 입력" required autocomplete="username">
     <label for="password">비밀번호</label>

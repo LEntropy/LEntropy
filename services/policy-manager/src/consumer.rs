@@ -182,7 +182,10 @@ async fn process_event(nats: &Client, pool: &PgPool, event: EndpointDetectedEven
     );
 
     // ── 4. 상태 변경 or IP 변경 시 enforcement 재발행 ────────────────────
-    let status_changed = row.status != new_status;
+    // 이미 인증된 단말(allowed + username)은 ARP 이벤트로 downgrade하지 않음.
+    // 로그인 후 새 ARP 패킷이 와도 groups 없이 재평가하면 quarantined로 돌아가는 버그 방지.
+    let already_authenticated = row.status == "allowed" && row.username.is_some();
+    let status_changed = !already_authenticated && row.status != new_status;
     // IP가 바뀌었고 이미 차단/격리 상태면 enforcement 재발행 필요
     let needs_enforcement_update = ip_changed
         && matches!(row.status, _ if ["denied", "quarantined"].contains(&row.status.as_str()));

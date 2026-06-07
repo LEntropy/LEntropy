@@ -1,0 +1,7 @@
+# 모든 텍스트 파일은 LF로 통일 (크로스 컴파일 체크섬 불일치 방지)
+* text=auto eol=lf
+
+# Windows 스크립트만 CRLF 허용
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf

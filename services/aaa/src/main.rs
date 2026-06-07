@@ -95,6 +95,8 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // ── Captive Portal 상태 ───────────────────────────────────────────────
+    let portal_url =
+        std::env::var("NAC_PORTAL_URL").unwrap_or_else(|_| "http://192.168.0.39:8080".to_string());
     let local_auth = nac_auth::LocalAuth::new(pool.clone());
     let state = Arc::new(captive_portal::PortalState {
         ldap,
@@ -103,6 +105,7 @@ async fn main() -> anyhow::Result<()> {
         jwt_secret,
         pool,
         default_mac: None,
+        portal_url,
     });
 
     // ── HTTP 서버 바인딩 ─────────────────────────────────────────────────

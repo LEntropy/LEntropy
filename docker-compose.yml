@@ -85,6 +85,7 @@ services:
       CAPTIVE_PORTAL_ADDR: "0.0.0.0:8080"
       RADIUS_AUTH_ADDR: "0.0.0.0:1812"
       RADIUS_ACCT_ADDR: "0.0.0.0:1813"
+      NAC_PORTAL_URL: "http://192.168.0.39:8080"
     depends_on:
       postgres:
         condition: service_healthy

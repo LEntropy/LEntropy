@@ -39,6 +39,7 @@ pub struct PortalState {
     pub jwt_secret: Vec<u8>,
     pub pool: PgPool,
     pub default_mac: Option<String>,
+    pub portal_url: String,
 }
 
 pub type SharedState = Arc<PortalState>;
@@ -106,8 +107,8 @@ async fn ncsi_probe(
 ) -> Response {
     let ip = addr.ip().to_string();
     match endpoint_status(&state.pool, &ip).await.as_deref() {
-        Some("denied") => Redirect::to("/blocked").into_response(),
-        Some("quarantined") => Redirect::to("/").into_response(),
+        Some("denied") => Redirect::to(&format!("{}/blocked", state.portal_url)).into_response(),
+        Some("quarantined") => Redirect::to(&state.portal_url).into_response(),
         // allowed이거나 상태 미확인: Windows NCSI 정상 응답 반환 → OS 팝업 해제
         _ => (StatusCode::OK, "Microsoft NCSI\r\n").into_response(),
     }
@@ -119,8 +120,8 @@ async fn generate_204(
 ) -> Response {
     let ip = addr.ip().to_string();
     match endpoint_status(&state.pool, &ip).await.as_deref() {
-        Some("denied") => Redirect::to("/blocked").into_response(),
-        Some("quarantined") => Redirect::to("/").into_response(),
+        Some("denied") => Redirect::to(&format!("{}/blocked", state.portal_url)).into_response(),
+        Some("quarantined") => Redirect::to(&state.portal_url).into_response(),
         _ => StatusCode::NO_CONTENT.into_response(),
     }
 }
@@ -131,8 +132,8 @@ async fn hotspot_detect(
 ) -> Response {
     let ip = addr.ip().to_string();
     match endpoint_status(&state.pool, &ip).await.as_deref() {
-        Some("denied") => Redirect::to("/blocked").into_response(),
-        Some("quarantined") => Redirect::to("/").into_response(),
+        Some("denied") => Redirect::to(&format!("{}/blocked", state.portal_url)).into_response(),
+        Some("quarantined") => Redirect::to(&state.portal_url).into_response(),
         _ => Html("<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>")
             .into_response(),
     }
@@ -146,6 +147,7 @@ async fn landing_page(
 ) -> Response {
     let ip = addr.ip().to_string();
     let mac = mac_from_db(&state.pool, &ip).await.unwrap_or_default();
+    tracing::debug!(client_ip = %ip, mac = %mac, "captive portal landing page");
     match endpoint_status(&state.pool, &ip).await.as_deref() {
         Some("denied") => {
             info!(ip, "blocked endpoint accessed captive portal");
@@ -165,8 +167,8 @@ async fn catch_all(
 ) -> Response {
     let ip = addr.ip().to_string();
     match endpoint_status(&state.pool, &ip).await.as_deref() {
-        Some("denied") => Redirect::to("/blocked").into_response(),
-        Some("quarantined") => Redirect::to("/").into_response(),
+        Some("denied") => Redirect::to(&format!("{}/blocked", state.portal_url)).into_response(),
+        Some("quarantined") => Redirect::to(&state.portal_url).into_response(),
         // allowed이거나 미등록: 204로 응답해 OS가 연결됐다고 인식하게 함
         _ => StatusCode::NO_CONTENT.into_response(),
     }

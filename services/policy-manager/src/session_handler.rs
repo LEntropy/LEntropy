@@ -78,14 +78,32 @@ async fn process_auth_response(nats: &Client, pool: &PgPool, resp: AuthResponse)
     let audit_repo = AuditRepo::new(pool);
 
     // ── Resolve endpoint ─────────────────────────────────────────────────
-    // MAC이 비어있으면 find_by_mac이 "invalid input syntax for type macaddr" DB 에러를 반환
-    if resp.endpoint_id.is_none() && resp.mac_address.is_empty() {
-        warn!(ip = %resp.ip_address, "auth response has no MAC and no endpoint_id — skipping");
+    // 단말 조회: endpoint_id → MAC → IP 순으로 fallback
+    let endpoint = if let Some(eid) = resp.endpoint_id {
+        endpoint_repo.find_by_id(eid).await?
+    } else if !resp.mac_address.is_empty() {
+        endpoint_repo.find_by_mac(&resp.mac_address).await?
+    } else if !resp.ip_address.is_empty() {
+        // MAC 없을 때 IP로 fallback (캡티브 포털에서 MAC 조회 실패 시)
+        sqlx::query_as::<_, nac_store::endpoint::EndpointRow>(&format!(
+            "SELECT {} FROM endpoints \
+             WHERE ip_address = $1 OR ip_address = $2 LIMIT 1",
+            "id, mac_address::text, ip_address::text, \
+             hostname, os_family, os_version, device_type, vendor, \
+             vlan_id, switch_port, interface, username, status, \
+             first_seen, last_seen, is_compliant, last_posture_check, \
+             assigned_policy_id, policy_exempt, \
+             posture_sw, COALESCE(posture_missing_patches, 0) AS posture_missing_patches, \
+             posture_usb_enabled, posture_bluetooth, posture_folder_sharing, posture_os_version, \
+             agent_id"
+        ))
+        .bind(format!("{}/32", resp.ip_address))
+        .bind(&resp.ip_address)
+        .fetch_optional(pool)
+        .await?
+    } else {
+        warn!("auth response has no MAC, endpoint_id, or IP — skipping");
         return Ok(());
-    }
-    let endpoint = match &resp.endpoint_id {
-        Some(eid) => endpoint_repo.find_by_id(*eid).await?,
-        None => endpoint_repo.find_by_mac(&resp.mac_address).await?,
     };
 
     let endpoint = match endpoint {

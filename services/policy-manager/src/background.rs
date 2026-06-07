@@ -139,23 +139,37 @@ async fn arp_sync(
         }
     };
 
-    // 호스트 ARP 테이블 파싱: IP → MAC (도커 내부/로컬 IP 제외)
-    let mut arp_map: HashMap<String, String> = HashMap::new();
+    // 호스트 ARP 테이블 파싱: MAC → IP (도커 내부/로컬 IP 제외)
+    // incomplete(flags==0x0) 항목 무시, 같은 MAC에 여러 IP면 complete(0x2) 플래그 우선
+    let mut arp_raw: HashMap<String, (String, u8)> = HashMap::new();
     for line in content.lines().skip(1) {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 4 {
             continue;
         }
         let ip = parts[0];
+        let flags = parts
+            .get(2)
+            .and_then(|s| u8::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+            .unwrap_or(0);
         let mac = parts[3].to_lowercase();
-        if mac == "00:00:00:00:00:00" {
+        if mac == "00:00:00:00:00:00" || flags == 0 {
             continue;
         }
         if ip.starts_with("172.") || ip.starts_with("127.") || ip.starts_with("169.254.") {
             continue;
         }
-        arp_map.insert(ip.to_string(), mac);
+        // 같은 MAC에 여러 IP: complete(0x2) 플래그 항목 우선, 동일하면 먼저 나온 것 유지
+        let entry = arp_raw.entry(mac).or_insert((ip.to_string(), flags));
+        if flags > entry.1 {
+            *entry = (ip.to_string(), flags);
+        }
     }
+    // MAC → IP 매핑으로 변환 (루프에서 MAC당 1회만 처리)
+    let arp_map: HashMap<String, String> = arp_raw
+        .into_iter()
+        .map(|(mac, (ip, _))| (mac, ip))
+        .collect();
 
     debug!(entries = arp_map.len(), "ARP sync: table read");
 
@@ -179,9 +193,9 @@ async fn arp_sync(
         .collect();
 
     // 현재 ARP 테이블에 없는 MAC의 pending 항목 제거
-    pending_ip.retain(|mac, _| arp_map.values().any(|m| m == mac));
+    pending_ip.retain(|mac, _| arp_map.contains_key(mac));
 
-    for (ip, mac) in &arp_map {
+    for (mac, ip) in &arp_map {
         // 게이트웨이 IP는 절대 endpoint로 등록하지 않음
         if gateway_ips.contains(ip) {
             debug!(ip = %ip, "ARP sync: skipping default gateway");

@@ -6,7 +6,7 @@ use nac_proto::agent::{
     StatusReport,
 };
 use tonic::{metadata::MetadataValue, transport::Channel};
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::software::InstalledSoftware;
 
@@ -47,7 +47,10 @@ impl AgentTransport {
         };
         let resp = self.client.register(tonic::Request::new(req)).await?;
         let token = resp.into_inner().token;
-        debug!(token_len = token.len(), "register success, token stored");
+        if token.is_empty() {
+            return Err(anyhow::anyhow!("server returned empty token"));
+        }
+        info!(token_len = token.len(), "registered — JWT token stored");
         self.token = Some(token.clone());
         Ok(token)
     }

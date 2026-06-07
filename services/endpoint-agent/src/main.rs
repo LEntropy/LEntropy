@@ -65,14 +65,20 @@ async fn main() -> Result<()> {
             }
         };
 
-    // 초기 등록
+    // 초기 등록 — 실패 시 재시도 루프
     let os_str = format!("{} {}", sys.os_name, sys.os_version);
     info!(primary_mac = %sys.primary_mac, hostname = %sys.hostname, "registering with gateway");
-    if let Err(e) = transport
-        .register(&os_str, &sys.agent_version, &sys.primary_mac, &sys.hostname)
-        .await
-    {
-        error!(error = %e, "initial registration failed");
+    loop {
+        match transport
+            .register(&os_str, &sys.agent_version, &sys.primary_mac, &sys.hostname)
+            .await
+        {
+            Ok(_) => break,
+            Err(e) => {
+                error!(error = %e, "registration failed — retrying in 10s");
+                tokio::time::sleep(Duration::from_secs(10)).await;
+            }
+        }
     }
 
     // 주기적 상태 보고 루프

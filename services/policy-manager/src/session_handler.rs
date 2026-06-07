@@ -85,9 +85,9 @@ async fn process_auth_response(nats: &Client, pool: &PgPool, resp: AuthResponse)
         endpoint_repo.find_by_mac(&resp.mac_address).await?
     } else if !resp.ip_address.is_empty() {
         // MAC 없을 때 IP로 fallback (캡티브 포털에서 MAC 조회 실패 시)
+        // host() 함수로 inet 타입에서 순수 IP만 추출해 텍스트 비교
         sqlx::query_as::<_, nac_store::endpoint::EndpointRow>(&format!(
-            "SELECT {} FROM endpoints \
-             WHERE ip_address = $1 OR ip_address = $2 LIMIT 1",
+            "SELECT {} FROM endpoints WHERE host(ip_address) = $1 LIMIT 1",
             "id, mac_address::text, ip_address::text, \
              hostname, os_family, os_version, device_type, vendor, \
              vlan_id, switch_port, interface, username, status, \
@@ -97,7 +97,6 @@ async fn process_auth_response(nats: &Client, pool: &PgPool, resp: AuthResponse)
              posture_usb_enabled, posture_bluetooth, posture_folder_sharing, posture_os_version, \
              agent_id"
         ))
-        .bind(format!("{}/32", resp.ip_address))
         .bind(&resp.ip_address)
         .fetch_optional(pool)
         .await?

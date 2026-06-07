@@ -71,10 +71,8 @@ async fn health() -> impl IntoResponse {
 /// DB에서 IP로 엔드포인트 MAC 조회 (캡티브 포털 로그인 시 MAC 특정용)
 async fn mac_from_db(pool: &PgPool, ip: &str) -> Option<String> {
     sqlx::query_scalar::<_, String>(
-        "SELECT mac_address::TEXT FROM endpoints \
-         WHERE ip_address = $1 OR ip_address = $2 LIMIT 1",
+        "SELECT mac_address::TEXT FROM endpoints WHERE host(ip_address) = $1 LIMIT 1",
     )
-    .bind(format!("{ip}/32"))
     .bind(ip)
     .fetch_optional(pool)
     .await
@@ -85,9 +83,8 @@ async fn mac_from_db(pool: &PgPool, ip: &str) -> Option<String> {
 /// DB에서 IP로 엔드포인트 상태 조회
 async fn endpoint_status(pool: &PgPool, ip: &str) -> Option<String> {
     sqlx::query_scalar::<_, String>(
-        "SELECT status FROM endpoints WHERE ip_address = $1 OR ip_address = $2 LIMIT 1",
+        "SELECT status FROM endpoints WHERE host(ip_address) = $1 LIMIT 1",
     )
-    .bind(format!("{ip}/32"))
     .bind(ip)
     .fetch_optional(pool)
     .await

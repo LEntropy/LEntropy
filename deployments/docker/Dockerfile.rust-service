@@ -1,4 +1,8 @@
-# Multi-stage build for Rust services
+# syntax=docker/dockerfile:1
+# BuildKit 캐시 마운트로 빌드 속도 최적화:
+#   - /root/.cargo/registry: crates.io 다운로드 캐시 (빌드 간 공유)
+#   - /build/target: Rust 증분 컴파일 캐시 (변경된 크레이트만 재컴파일)
+# 처음 빌드는 오래 걸리지만 이후 소스 변경 시 변경분만 재컴파일.
 ARG SERVICE_NAME
 
 FROM rust:1.87-slim AS builder
@@ -12,12 +16,12 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /build
 
-# Cargo 워크스페이스 메타데이터 (모든 멤버의 Cargo.toml 필요)
+# 워크스페이스 메타데이터 전체 복사
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates/ crates/
 COPY proto/ proto/
 
-# 워크스페이스 모든 서비스의 Cargo.toml 복사 (워크스페이스 해석에 필요)
+# 모든 서비스 Cargo.toml (워크스페이스 해석에 필요)
 COPY services/policy-manager/Cargo.toml  services/policy-manager/
 COPY services/sensor/Cargo.toml          services/sensor/
 COPY services/enforcement/Cargo.toml     services/enforcement/
@@ -28,22 +32,26 @@ COPY services/api-gateway/Cargo.toml     services/api-gateway/
 COPY services/endpoint-agent/Cargo.toml  services/endpoint-agent/
 COPY test/integration/Cargo.toml         test/integration/
 
-# sqlx::migrate! 매크로는 컴파일 타임에 migrations 디렉토리를 읽음
+# sqlx::migrate! 매크로가 컴파일 타임에 읽는 마이그레이션 파일
 COPY services/policy-manager/migrations/ services/policy-manager/migrations/
 
-# 더미 main으로 의존성만 빌드 (캐시 최적화)
+# 빌드 대상 서비스 소스 복사
+COPY services/${SERVICE_NAME}/src/ services/${SERVICE_NAME}/src/
+
+# 나머지 서비스는 더미 main (워크스페이스 컴파일에 src/ 필요)
 RUN for svc in policy-manager sensor enforcement aaa dhcp agent-gateway api-gateway endpoint-agent; do \
-        mkdir -p services/$svc/src && \
-        echo 'fn main() {}' > services/$svc/src/main.rs; \
+        [ -f "services/$svc/src/main.rs" ] || \
+        (mkdir -p services/$svc/src && echo 'fn main() {}' > services/$svc/src/main.rs); \
     done && \
     mkdir -p test/integration/src && \
-    echo 'fn main() {}' > test/integration/src/main.rs && \
-    cargo build --release -p ${SERVICE_NAME} 2>/dev/null || true
+    echo 'fn main() {}' > test/integration/src/main.rs
 
-# 실제 소스 복사 및 빌드
-COPY services/${SERVICE_NAME}/src/ services/${SERVICE_NAME}/src/
-RUN touch services/${SERVICE_NAME}/src/main.rs && \
-    cargo build --release -p ${SERVICE_NAME}
+# BuildKit 캐시 마운트: target/과 cargo 레지스트리를 빌드 간 공유
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/build/target \
+    cargo build --release -p ${SERVICE_NAME} && \
+    cp /build/target/release/${SERVICE_NAME} /service
 
 FROM debian:bookworm-slim AS runtime
 ARG SERVICE_NAME
@@ -56,9 +64,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -r -s /bin/false nac
-# enforcement는 root 권한 필요 (nft/iptables 조작)
-# USER nac  ← 서비스별로 docker-compose에서 user 지정
 
-COPY --from=builder /build/target/release/${SERVICE_NAME} /usr/local/bin/service
+COPY --from=builder /service /usr/local/bin/service
 
 ENTRYPOINT ["/usr/local/bin/service"]

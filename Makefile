@@ -1,6 +1,10 @@
 .PHONY: all check test fmt lint build clean dev-up dev-down dev-lab-up dev-lab-down \
         proto watch audit setup \
-        dev-all-up build-all test-all test-integration
+        dev-all-up build-all test-all test-integration \
+        docker-build docker-deploy
+
+# BuildKit 활성화 (캐시 마운트 --mount=type=cache 사용에 필요)
+export DOCKER_BUILDKIT=1
 
 all: check test
 
@@ -62,6 +66,15 @@ test-all:
 test-integration:
 	POLICY_MANAGER_URL=http://localhost:8001 \
 	cargo test --manifest-path test/integration/Cargo.toml --features integration
+
+## Docker 빌드 단축키 (BuildKit 캐시 활용)
+# 특정 서비스만 빌드: make docker-build SVC=aaa
+docker-build:
+	docker compose build $(SVC)
+
+# 빌드 + 재시작: make docker-deploy SVC=aaa
+docker-deploy:
+	docker compose build $(SVC) && docker compose up -d $(SVC)
 
 dev-logs:
 	docker compose logs -f

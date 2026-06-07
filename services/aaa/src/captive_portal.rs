@@ -18,7 +18,7 @@ use std::sync::Arc;
 use async_nats::Client as NatsClient;
 use axum::{
     extract::{ConnectInfo, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode, Uri},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Form, Router,
@@ -63,6 +63,28 @@ pub fn router(state: SharedState) -> Router {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/// 쿼리 파라미터에 URL을 안전하게 포함시키기 위한 percent-encoding
+fn percent_encode_url(input: &str) -> String {
+    let mut s = String::with_capacity(input.len() * 3);
+    for b in input.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                s.push(b as char)
+            }
+            b => s.push_str(&format!("%{b:02X}")),
+        }
+    }
+    s
+}
+
+/// HTML attribute value에 삽입할 문자열의 특수문자 이스케이프
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
 
 async fn health() -> impl IntoResponse {
     axum::Json(json!({"status": "ok"}))
@@ -138,13 +160,20 @@ async fn hotspot_detect(
 
 // ── Page handlers ─────────────────────────────────────────────────────────────
 
+#[derive(Debug, Deserialize)]
+struct LandingQuery {
+    url: Option<String>,
+}
+
 async fn landing_page(
     State(state): State<SharedState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Query(query): Query<LandingQuery>,
 ) -> Response {
     let ip = addr.ip().to_string();
     let mac = mac_from_db(&state.pool, &ip).await.unwrap_or_default();
-    tracing::debug!(client_ip = %ip, mac = %mac, "captive portal landing page");
+    let redirect_url = query.url.as_deref().unwrap_or("");
+    tracing::debug!(client_ip = %ip, mac = %mac, redirect_url, "captive portal landing page");
     match endpoint_status(&state.pool, &ip).await.as_deref() {
         Some("denied") => {
             info!(ip, "blocked endpoint accessed captive portal");
@@ -152,20 +181,38 @@ async fn landing_page(
         }
         Some("quarantined") => {
             info!(ip, "quarantined endpoint accessing captive portal");
-            Html(login_html(&mac)).into_response()
+            Html(login_html(&mac, redirect_url)).into_response()
         }
-        _ => Html(login_html(&mac)).into_response(),
+        _ => Html(login_html(&mac, redirect_url)).into_response(),
     }
 }
 
 async fn catch_all(
     State(state): State<SharedState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    uri: Uri,
+    headers: HeaderMap,
 ) -> Response {
     let ip = addr.ip().to_string();
     match endpoint_status(&state.pool, &ip).await.as_deref() {
         Some("denied") => Redirect::to(&format!("{}/blocked", state.portal_url)).into_response(),
-        Some("quarantined") => Redirect::to(&state.portal_url).into_response(),
+        Some("quarantined") => {
+            // 원래 접근하려던 URL을 쿼리 파라미터로 전달
+            let redirect_to = headers
+                .get("host")
+                .and_then(|h| h.to_str().ok())
+                .map(|host| {
+                    let path = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
+                    let original = format!("http://{}{}", host, path);
+                    format!(
+                        "{}/?url={}",
+                        state.portal_url,
+                        percent_encode_url(&original)
+                    )
+                })
+                .unwrap_or_else(|| state.portal_url.clone());
+            Redirect::to(&redirect_to).into_response()
+        }
         // allowed이거나 미등록: 204로 응답해 OS가 연결됐다고 인식하게 함
         _ => StatusCode::NO_CONTENT.into_response(),
     }
@@ -184,6 +231,7 @@ struct LoginForm {
     mac: Option<String>,
     endpoint_id: Option<String>,
     session_id: Option<String>,
+    redirect_url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -263,7 +311,15 @@ async fn handle_login(
             };
 
             publish_auth_response(&state.nats, &event, &token).await;
-            Redirect::to("/success").into_response()
+            // 로그인 성공: 원래 접속하려던 URL로 리다이렉트, 없으면 성공 페이지
+            let dest = form
+                .redirect_url
+                .as_deref()
+                .filter(|u| {
+                    !u.is_empty() && (u.starts_with("http://") || u.starts_with("https://"))
+                })
+                .unwrap_or("/success");
+            Redirect::to(dest).into_response()
         }
         Err(e) => {
             warn!(
@@ -326,8 +382,10 @@ async fn publish_auth_response(nats: &NatsClient, event: &AuthResponseEvent, _to
 
 // ── Static HTML ───────────────────────────────────────────────────────────────
 
-fn login_html(mac: &str) -> String {
-    LOGIN_HTML_TEMPLATE.replace("{{MAC}}", mac)
+fn login_html(mac: &str, redirect_url: &str) -> String {
+    LOGIN_HTML_TEMPLATE
+        .replace("{{MAC}}", mac)
+        .replace("{{REDIRECT_URL}}", &html_escape(redirect_url))
 }
 
 static LOGIN_HTML_TEMPLATE: &str = r##"<!DOCTYPE html>
@@ -391,6 +449,7 @@ static LOGIN_HTML_TEMPLATE: &str = r##"<!DOCTYPE html>
   <p>이 네트워크를 사용하려면 로그인이 필요합니다.</p>
   <form method="POST" action="/login">
     <input type="hidden" name="mac" value="{{MAC}}">
+    <input type="hidden" name="redirect_url" value="{{REDIRECT_URL}}">
     <label for="username">사용자명</label>
     <input type="text" id="username" name="username" placeholder="사용자명 입력" required autocomplete="username">
     <label for="password">비밀번호</label>

@@ -39,16 +39,19 @@ async fn reconcile(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
     if terminated > 0 {
         info!(
             count = terminated,
-            "reconciliation: open sessions terminated — re-auth required"
+            "reconciliation: open sessions terminated"
         );
+    }
 
-        // allowed 단말: 세션이 없어졌으므로 endpoint_detected 재발행 → consumer가 정책 재평가
-        let allowed: Vec<(String, Option<String>)> = sqlx::query_as(
-            "SELECT mac_address::TEXT, ip_address::TEXT FROM endpoints WHERE status = 'allowed'",
-        )
-        .fetch_all(pool)
-        .await?;
+    // 재시작 시 항상 allowed 단말 재평가: 세션 유무와 무관하게 실행
+    // (enforcement 인메모리 상태가 사라지고, 세션이 없는 상태에서 allowed인 단말도 처리)
+    let allowed: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT mac_address::TEXT, ip_address::TEXT FROM endpoints WHERE status = 'allowed'",
+    )
+    .fetch_all(pool)
+    .await?;
 
+    if !allowed.is_empty() {
         let now_ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
@@ -73,12 +76,10 @@ async fn reconcile(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
             }
         }
 
-        if !allowed.is_empty() {
-            info!(
-                count = allowed.len(),
-                "reconciliation: re-evaluation triggered for allowed endpoints"
-            );
-        }
+        info!(
+            count = allowed.len(),
+            "reconciliation: re-evaluation triggered for allowed endpoints (session-based auth reset)"
+        );
     }
 
     // 1. 차단/격리 단말 재차단

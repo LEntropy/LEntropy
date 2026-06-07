@@ -182,9 +182,19 @@ async fn process_event(nats: &Client, pool: &PgPool, event: EndpointDetectedEven
     );
 
     // ── 4. 상태 변경 or IP 변경 시 enforcement 재발행 ────────────────────
-    // 이미 인증된 단말(allowed + username)은 ARP 이벤트로 downgrade하지 않음.
-    // 로그인 후 새 ARP 패킷이 와도 groups 없이 재평가하면 quarantined로 돌아가는 버그 방지.
-    let already_authenticated = row.status == "allowed" && row.username.is_some();
+    // 세션 기반 인증: state='active' 세션이 존재할 때만 "이미 인증됨"으로 간주.
+    // 세션이 없으면(재연결, 서비스 재시작 등) 정책 재평가 → 재격리 → 재로그인 요구.
+    let already_authenticated = if row.status == "allowed" && row.username.is_some() {
+        session_repo
+            .find_active_by_endpoint(row.id)
+            .await
+            .ok()
+            .flatten()
+            .map(|s| s.state == "active")
+            .unwrap_or(false)
+    } else {
+        false
+    };
     let status_changed = !already_authenticated && row.status != new_status;
     // IP가 바뀌었고 이미 차단/격리 상태면 enforcement 재발행 필요
     let needs_enforcement_update = ip_changed

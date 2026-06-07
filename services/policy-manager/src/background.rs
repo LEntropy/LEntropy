@@ -24,6 +24,63 @@ pub async fn run_reconciliation(nats: Client, pool: PgPool) {
 }
 
 async fn reconcile(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
+    // 0. 세션 기반 인증: 열린 세션 전체 종료 → 재시작 시 모든 단말 재인증 요구
+    let terminated: i64 = sqlx::query_scalar(
+        "WITH t AS (
+            UPDATE sessions SET state = 'terminated', ended_at = NOW(), updated_at = NOW()
+            WHERE ended_at IS NULL
+            RETURNING 1
+        ) SELECT COUNT(*) FROM t",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+
+    if terminated > 0 {
+        info!(
+            count = terminated,
+            "reconciliation: open sessions terminated — re-auth required"
+        );
+
+        // allowed 단말: 세션이 없어졌으므로 endpoint_detected 재발행 → consumer가 정책 재평가
+        let allowed: Vec<(String, Option<String>)> = sqlx::query_as(
+            "SELECT mac_address::TEXT, ip_address::TEXT FROM endpoints WHERE status = 'allowed'",
+        )
+        .fetch_all(pool)
+        .await?;
+
+        let now_ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        for (mac, ip_opt) in &allowed {
+            let ip = ip_opt
+                .as_deref()
+                .map(|s| s.split('/').next().unwrap_or(s))
+                .unwrap_or("");
+            let event = serde_json::json!({
+                "mac_address": mac,
+                "ip_address":  ip,
+                "interface":   "",
+                "source":      "session-cleanup",
+                "timestamp":   now_ts,
+            });
+            if let Ok(payload) = serde_json::to_vec(&event) {
+                nats.publish(ENDPOINT_DETECTED_SUBJECT, payload.into())
+                    .await
+                    .ok();
+            }
+        }
+
+        if !allowed.is_empty() {
+            info!(
+                count = allowed.len(),
+                "reconciliation: re-evaluation triggered for allowed endpoints"
+            );
+        }
+    }
+
     // 1. 차단/격리 단말 재차단
     let rows: Vec<(String, Option<String>, String)> = sqlx::query_as(
         "SELECT mac_address::TEXT, ip_address::TEXT, status FROM endpoints \

@@ -52,6 +52,21 @@ async fn reconcile(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
     .await?;
 
     if !allowed.is_empty() {
+        // username 초기화: 정책 엔진이 세션을 모르므로, username이 있으면 여전히 allow로 평가됨.
+        // 재시작 시 username을 지워야 "미인증 상태"로 재평가 → quarantine → 재로그인 요구.
+        // (username 없이 MAC/IP 기반으로 allow하는 정책의 단말은 영향 없음)
+        if let Err(e) = sqlx::query(
+            "UPDATE endpoints SET username = NULL \
+             WHERE status = 'allowed' AND username IS NOT NULL",
+        )
+        .execute(pool)
+        .await
+        {
+            warn!(error = %e, "reconciliation: failed to clear usernames — re-auth may not work");
+        } else {
+            info!("reconciliation: usernames cleared for allowed endpoints");
+        }
+
         let now_ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)

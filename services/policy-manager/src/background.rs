@@ -43,57 +43,42 @@ async fn reconcile(nats: &Client, pool: &PgPool) -> anyhow::Result<()> {
         );
     }
 
-    // 재시작 시 항상 allowed 단말 재평가: 세션 유무와 무관하게 실행
-    // (enforcement 인메모리 상태가 사라지고, 세션이 없는 상태에서 allowed인 단말도 처리)
-    let allowed: Vec<(String, Option<String>)> = sqlx::query_as(
-        "SELECT mac_address::TEXT, ip_address::TEXT FROM endpoints WHERE status = 'allowed'",
+    // 재시작 시 캡티브 포털 인증 단말(username 있는 allowed) 직접 재격리.
+    // 정책 재평가를 거치면 "quarantine-unknown" 대신 "allow-corp-devices/default-allow"가
+    // 매칭될 수 있음(디바이스 핑거프린팅 완료 후). 정책 우회하여 직접 격리.
+    let reauth: Vec<(uuid::Uuid, String, Option<String>)> = sqlx::query_as(
+        "UPDATE endpoints SET status = 'quarantined', username = NULL \
+         WHERE status = 'allowed' AND username IS NOT NULL \
+         RETURNING id, mac_address::TEXT, ip_address::TEXT",
     )
     .fetch_all(pool)
     .await?;
 
-    if !allowed.is_empty() {
-        // username 초기화: 정책 엔진이 세션을 모르므로, username이 있으면 여전히 allow로 평가됨.
-        // 재시작 시 username을 지워야 "미인증 상태"로 재평가 → quarantine → 재로그인 요구.
-        // (username 없이 MAC/IP 기반으로 allow하는 정책의 단말은 영향 없음)
+    for (id, mac, ip_opt) in &reauth {
+        let ip = ip_opt
+            .as_deref()
+            .map(|s| s.split('/').next().unwrap_or(s))
+            .unwrap_or("");
+
+        // 새 세션 생성
         if let Err(e) = sqlx::query(
-            "UPDATE endpoints SET username = NULL \
-             WHERE status = 'allowed' AND username IS NOT NULL",
+            "INSERT INTO sessions (endpoint_id, auth_method) VALUES ($1, 'captive_portal')",
         )
+        .bind(id)
         .execute(pool)
         .await
         {
-            warn!(error = %e, "reconciliation: failed to clear usernames — re-auth may not work");
-        } else {
-            info!("reconciliation: usernames cleared for allowed endpoints");
+            warn!(error = %e, mac = %mac, "reconciliation: session create failed");
         }
 
-        let now_ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
+        // enforcement 격리 명령
+        publish_enforcement(nats, mac, ip, "quarantine").await;
+    }
 
-        for (mac, ip_opt) in &allowed {
-            let ip = ip_opt
-                .as_deref()
-                .map(|s| s.split('/').next().unwrap_or(s))
-                .unwrap_or("");
-            let event = serde_json::json!({
-                "mac_address": mac,
-                "ip_address":  ip,
-                "interface":   "",
-                "source":      "session-cleanup",
-                "timestamp":   now_ts,
-            });
-            if let Ok(payload) = serde_json::to_vec(&event) {
-                nats.publish(ENDPOINT_DETECTED_SUBJECT, payload.into())
-                    .await
-                    .ok();
-            }
-        }
-
+    if !reauth.is_empty() {
         info!(
-            count = allowed.len(),
-            "reconciliation: re-evaluation triggered for allowed endpoints (session-based auth reset)"
+            count = reauth.len(),
+            "reconciliation: re-quarantined captive-portal endpoints (session-based auth reset)"
         );
     }
 

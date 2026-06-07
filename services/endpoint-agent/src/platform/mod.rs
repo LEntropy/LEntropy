@@ -16,21 +16,52 @@ pub struct SystemInfo {
 
 pub fn collect() -> Result<SystemInfo> {
     let hostname = sys_info::hostname().unwrap_or_else(|_| "unknown".to_string());
-    let os_type = sys_info::os_type().unwrap_or_else(|_| std::env::consts::OS.to_string());
-    let os_release = sys_info::os_release().unwrap_or_else(|_| "unknown".to_string());
     let cpu_num = sys_info::cpu_num().unwrap_or(1);
     let mem = sys_info::mem_info().map(|m| m.total / 1024).unwrap_or(0);
     let primary_mac = collect_primary_mac();
 
+    // Windows: sys-info가 GetVersionEx(deprecated)를 써서 항상 "6.2"를 반환.
+    // CIM Win32_OperatingSystem으로 정확한 정보 수집.
+    #[cfg(target_os = "windows")]
+    let (os_name, os_version) = windows_os_info();
+    #[cfg(not(target_os = "windows"))]
+    let os_name = sys_info::os_type().unwrap_or_else(|_| std::env::consts::OS.to_string());
+    #[cfg(not(target_os = "windows"))]
+    let os_version = sys_info::os_release().unwrap_or_else(|_| "unknown".to_string());
+
     Ok(SystemInfo {
         hostname,
-        os_name: os_type,
-        os_version: os_release,
+        os_name,
+        os_version,
         cpu_cores: cpu_num,
         mem_total_mb: mem,
         agent_version: env!("CARGO_PKG_VERSION").to_string(),
         primary_mac,
     })
+}
+
+/// Windows 10/11의 정확한 OS 이름과 버전을 CIM으로 조회.
+/// sys-info::os_release()는 GetVersionEx를 써서 Windows 10에서도 "6.2.9200"을 반환하는 버그가 있음.
+#[cfg(target_os = "windows")]
+fn windows_os_info() -> (String, String) {
+    use std::process::Command;
+    let out = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "$o = Get-CimInstance Win32_OperatingSystem; \"$($o.Caption)|$($o.Version)\"",
+        ])
+        .output();
+
+    if let Ok(out) = out {
+        let s = String::from_utf8_lossy(&out.stdout);
+        let s = s.trim();
+        if let Some((caption, version)) = s.split_once('|') {
+            let caption = caption.trim().trim_start_matches("Microsoft ").to_string();
+            return (caption, version.trim().to_string());
+        }
+    }
+    ("Windows".to_string(), String::new())
 }
 
 /// 기본 네트워크 인터페이스의 MAC 주소 수집 (플랫폼별 구현)

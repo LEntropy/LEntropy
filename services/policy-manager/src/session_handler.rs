@@ -78,6 +78,11 @@ async fn process_auth_response(nats: &Client, pool: &PgPool, resp: AuthResponse)
     let audit_repo = AuditRepo::new(pool);
 
     // ── Resolve endpoint ─────────────────────────────────────────────────
+    // MAC이 비어있으면 find_by_mac이 "invalid input syntax for type macaddr" DB 에러를 반환
+    if resp.endpoint_id.is_none() && resp.mac_address.is_empty() {
+        warn!(ip = %resp.ip_address, "auth response has no MAC and no endpoint_id — skipping");
+        return Ok(());
+    }
     let endpoint = match &resp.endpoint_id {
         Some(eid) => endpoint_repo.find_by_id(*eid).await?,
         None => endpoint_repo.find_by_mac(&resp.mac_address).await?,

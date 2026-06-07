@@ -73,18 +73,18 @@ services:
       dockerfile: deployments/docker/Dockerfile.rust-service
       args:
         SERVICE_NAME: aaa
+    # 호스트 네트워크 모드: ConnectInfo에서 실제 단말 IP 직접 확인 가능
+    # bridge 모드에서는 172.17.0.1(Docker 게이트웨이)로 보여 MAC 조회 불가
+    network_mode: host
     environment:
-      DATABASE_URL: postgres://nac:nac_dev_password@postgres:5432/nac
-      REDIS_URL: redis://redis:6379
-      NATS_URL: nats://nats:4222
+      # host 네트워크이므로 서비스명 대신 localhost 사용
+      DATABASE_URL: postgres://nac:nac_dev_password@localhost:5432/nac
+      REDIS_URL: redis://localhost:6379
+      NATS_URL: nats://localhost:4222
       LISTEN_ADDR: "0.0.0.0:8080"
       CAPTIVE_PORTAL_ADDR: "0.0.0.0:8080"
       RADIUS_AUTH_ADDR: "0.0.0.0:1812"
       RADIUS_ACCT_ADDR: "0.0.0.0:1813"
-    ports:
-      - "8080:8080"
-      - "1812:1812/udp"
-      - "1813:1813/udp"
     depends_on:
       postgres:
         condition: service_healthy

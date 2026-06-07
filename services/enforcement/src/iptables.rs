@@ -209,6 +209,10 @@ add rule inet {t} nac_prerouting ether saddr @{sb} tcp dport 80 redirect to :{cp
 add rule inet {t} nac_prerouting ether saddr @{sq} tcp dport 80 redirect to :{cp}
 add rule inet {t} nac_prerouting ip saddr @{sbi} tcp dport 80 redirect to :{cp}
 add rule inet {t} nac_prerouting ip saddr @{sqi} tcp dport 80 redirect to :{cp}
+add rule inet {t} nac_prerouting ether saddr @{sb} tcp dport 443 reject with tcp reset
+add rule inet {t} nac_prerouting ether saddr @{sq} tcp dport 443 reject with tcp reset
+add rule inet {t} nac_prerouting ip saddr @{sbi} tcp dport 443 reject with tcp reset
+add rule inet {t} nac_prerouting ip saddr @{sqi} tcp dport 443 reject with tcp reset
 add chain inet {t} nac_forward {{ type filter hook forward priority -100; policy accept; }}
 flush chain inet {t} nac_forward
 add rule inet {t} nac_forward ether saddr @{sb} drop

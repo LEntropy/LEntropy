@@ -222,9 +222,11 @@ async fn process_auth_response(nats: &Client, pool: &PgPool, resp: AuthResponse)
     }
 
     // ── Publish enforcement command ───────────────────────────────────────
+    // resp.mac_address는 aaa에서 MAC 조회 실패 시 비어있을 수 있으므로
+    // DB에서 확인된 endpoint.mac_address를 사용
     publish_enforcement_command(
         nats,
-        &resp.mac_address,
+        &endpoint.mac_address,
         &endpoint.ip_address,
         new_status,
         &decision,
@@ -238,7 +240,7 @@ async fn process_auth_response(nats: &Client, pool: &PgPool, resp: AuthResponse)
             Some(endpoint.id),
             "aaa/captive_portal",
             json!({
-                "mac":      resp.mac_address,
+                "mac":      &endpoint.mac_address,
                 "username": username,
                 "groups":   resp.groups,
                 "decision": format!("{:?}", decision),

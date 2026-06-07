@@ -6,8 +6,8 @@ incremental = true
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
+# aarch64: cross 컴파일 시 aarch64-linux-gnu-gcc 사용 — lld 불필요
 [target.aarch64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
 [profile.dev]
 # 디버그 빌드: 최소 최적화 + 전체 디버그 정보
